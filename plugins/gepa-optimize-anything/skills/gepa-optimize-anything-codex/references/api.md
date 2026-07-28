@@ -23,9 +23,9 @@ Examples in `dataset`/`valset`/`test_set` are opaque — any object your `evalua
 `seed_candidate` is a **single string** at this API (multi-component `dict[str, str]` candidates
 exist only in the lower-level `gepa.gepa_launcher.optimize_anything`).
 
-**`batch_evaluator`** — grouped scoring for when evals batch better than they stream (a provide
+**`batch_evaluator`** — grouped scoring for when evals batch better than they stream (a provider
 batch API, fan-out over your own cluster): it receives ALL `(candidate, example)` pairs of an
-evaluation stage (minibatch, valset, held-out test pass) in **one call** and returns one result pe
+evaluation stage (minibatch, valset, held-out test pass) in **one call** and returns one result per
 pair (`score` or `(score, info)`). At least one of `evaluator` / `batch_evaluator` is required.
 When both are given, multi-pair stages use the batch function and single-pair evaluations use
 `evaluator`; with only `batch_evaluator`, singles route through it as singleton batches.
@@ -64,9 +64,19 @@ you want an unbiased number to report; skip it otherwise.
 | `engine_config` | `{}` | dict of **engine-specific** options — see the per-backend sections below. Parsed into a typed per-engine config dataclass; **an unknown key raises `TypeError` immediately** (fail fast, not warn-and-drop). |
 
 **If both `max_evals` and `max_token_cost` are `None`, the run is unbounded** (only a
-`warnings.warn`). Note the former fields `tracker`, `effort`, and `max_thinking_tokens` no longe
+`warnings.warn`). Note the former fields `tracker`, `effort`, and `max_thinking_tokens` no longer
 exist here: tracking is configured via the gepa backend's `engine_config["tracking"]`
 (see `tracking.md`), and `effort` / `max_thinking_tokens` are per-agent-engine `engine_config` keys.
+
+### Codex adapter exceptions
+
+For this repository's Linux-only Codex compatibility command, set `sandbox=False`.
+Do not pass `max_token_cost` to `autoresearch` or `meta_harness`: the adapter
+rejects the resulting `--max-budget-usd` flag before Codex starts because it
+cannot enforce a USD cap. The adapter maps its supported Claude model names to
+a pinned Codex target and reports token-derived USD as an estimate, not
+provider billing. It accepts GEPA's `--disallowedTools=...` form and rejects
+unknown flags plus `--settings` before Codex starts.
 
 ## The backends
 
@@ -111,7 +121,7 @@ engine_config = {
         "cache_evaluation": False,  # opt-in: cache identical (candidate, example) evals
         "capture_stdio": False,  # opt-in: route evaluator print() output into feedback
         "raise_on_exception": True,  # False → evaluator exceptions become score 0 + info["error"]
-        # "write_agent_state": True,     # agent-readable iterations/ + pareto/ tree under run_di
+        # "write_agent_state": True,     # agent-readable iterations/ + pareto/ tree under run_dir
     },
     "tracking": {"use_wandb": True},  # -> TrackingConfig (see references/tracking.md)
     "merge": {...},  # -> MergeConfig (cross-candidate merging) or omit
@@ -171,7 +181,7 @@ optimizer, not as the optimizer. Stops on budget exhaustion, `stop_at_score`, or
 `reflection.reflection_lm` (gepa) accepts either:
 - a **model-id string** resolved through LiteLLM (`"openai/gpt-5.1"` — the default —
   `"anthropic/claude-sonnet-4-6"`, a Bedrock inference-profile ARN, …); set the provider's
-  credentials, and pass litellm kwargs via `reflection.reflection_lm_kwargs`; o
+  credentials, and pass litellm kwargs via `reflection.reflection_lm_kwargs`; or
 - **any object/callable implementing GEPA's LM protocol** — `__call__(prompt) -> str` (a
   `str`-or-messages prompt in, completion text out). This is how you plug a **self-hosted or custom
   inference engine** (vLLM, a local server, your own client) instead of LiteLLM.
@@ -212,7 +222,7 @@ result = optimize_sequential(
     objective="...",
     configs=[
         OptimizeAnythingConfig(
-            engine="autoresearch", max_evals=100, max_token_cost=5.0
+            engine="autoresearch", max_evals=100, sandbox=False
         ),
         OptimizeAnythingConfig(
             engine="gepa", max_evals=200
@@ -222,7 +232,7 @@ result = optimize_sequential(
 ```
 
 `*_with_server` variants (`optimize_sequential_with_server`, `optimize_parallel_with_server`, …)
-take caller-owned `EvalServer`s — one per config (one shared server fo
+take caller-owned `EvalServer`s — one per config (one shared server for
 `optimize_adaptive_sequential_with_server`) — for embedding in outer frameworks that route every
 eval through their own server. Related: the autoresearch backend's `handoffs` key materializes
 prior-stage artifacts into the agent's work dir for hand-rolled sequential compositions.
@@ -242,6 +252,6 @@ result.metadata  # dict (verified keys):
 #   "budget", "total_cost", "adapter_cost", "wall_time", "engine", "output_dir", "progress_log"
 ```
 The gepa engine also writes `run_dir/` artifacts, and the eval server writes
-`output_dir/summary.json`. The `gepa_result` in metadata is the richest artifact — keep it fo
+`output_dir/summary.json`. The `gepa_result` in metadata is the richest artifact — keep it for
 post-hoc analysis. (If the best candidate equals the seed, the test scores are reported from the
 seed's single scoring pass rather than re-scored.)

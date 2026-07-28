@@ -1,0 +1,20 @@
+{
+  "name": "gepa-optimize-anything-codex",
+  "interface": {
+    "displayName": "GEPA Optimize Anything for Codex"
+  },
+  "plugins": [
+    {
+      "name": "gepa-optimize-anything",
+      "source": {
+        "source": "local",
+        "path": "./plugins/gepa-optimize-anything"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Engineering"
+    }
+  ]
+}

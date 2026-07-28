@@ -1,6 +1,6 @@
 # Writing evaluators
 
-The evaluator is where almost all of your effort and almost all of the quality come from. Whateve
+The evaluator is where almost all of your effort and almost all of the quality come from. Whatever
 backend you choose can only be as good as the score you compute and the feedback you return.
 
 ## The contract
@@ -21,12 +21,8 @@ When evals batch better than they stream — a provider batch API, one job submi
 stage, fan-out over your own infrastructure — write the batched form instead of (or alongside) the
 per-pair one:
 ```python
-def batch_evaluate(
-    pairs: list[tuple[str, Any]],
-) -> list:  # pairs = [(candidate, example), ...]
-    return [
-        score_or_score_info_tuple for candidate, example in pairs
-    ]  # one result per pair, same orde
+def batch_evaluate(pairs: list[tuple[str, Any]]) -> list:  # pairs = [(candidate, example), ...]
+    return [score_or_score_info_tuple for candidate, example in pairs]  # one result per pair, same order
 ```
 Each evaluation stage (minibatch, valset, held-out test pass) arrives as ONE call with all its
 pairs. Everything above about feedback-rich `info` applies per pair. Put diagnostics in each
@@ -38,11 +34,11 @@ The proposer (reflection LM or agent) writes the next candidate by reading `info
 ```python
 return score, {
     "score": score,
-    "output": output,  # what the candidate produced
+    "output": output,                 # what the candidate produced
     "expected": example.get("gold"),  # what was wanted (if available)
-    "error_type": err_type,  # compile error / wrong answer / format violation / timeout
-    "error_detail": traceback_or_diff,  # the actual message — concrete > vague
-    "passed_checks": [...],  # partial credit signals
+    "error_type": err_type,           # compile error / wrong answer / format violation / timeout
+    "error_detail": traceback_or_diff,# the actual message — concrete > vague
+    "passed_checks": [...],           # partial credit signals
     "failed_checks": [...],
 }
 ```
@@ -50,13 +46,13 @@ Rule of thumb: if a smart human reading only `info` could tell you *how to fix t
 proposer LLM can too. If `info` is just `{"score": 0.0}`, the search is blind.
 
 ### Two built-in channels for diagnostics
-- **`oa.log()`** — `import gepa.gepa_launcher as oa; oa.log("landing distance:", d)` inside you
+- **`oa.log()`** — `import gepa.gepa_launcher as oa; oa.log("landing distance:", d)` inside your
   evaluator. Same calling convention as `print()`; output is captured per-eval (thread-safe) and
   auto-included in the feedback under `info["log"]`. For child threads, propagate the context via
   `oa.get_log_context()` / `oa.set_log_context()`.
 - **`capture_stdio`** — set `engine_config={"engine": {"capture_stdio": True}}` (gepa backend) and
   any `print()`/stdout/stderr during evaluation lands in the feedback under `"stdout"`/`"stderr"` —
-  useful for wrapping existing scripts with no code changes. (Doesn't catch C-extension o
+  useful for wrapping existing scripts with no code changes. (Doesn't catch C-extension or
   subprocess output that bypasses Python's `sys.stdout`; route that through `oa.log()`.)
 
 ## LLM-as-judge scoring (subjective tasks)
@@ -66,16 +62,12 @@ as the score — and, importantly, return the judge's **written critique** as fe
 ```python
 def evaluate(candidate, example):
     output = run_my_model(candidate, example)
-    verdict = judge_lm(
-        JUDGE_RUBRIC.format(task=example, answer=output)
-    )  # your judge call
-    score = verdict["rating"] / 10.0  # normalize to a float, higher = bette
+    verdict = judge_lm(JUDGE_RUBRIC.format(task=example, answer=output))  # your judge call
+    score = verdict["rating"] / 10.0                  # normalize to a float, higher = better
     return score, {
         "score": score,
         "output": output,
-        "critique": verdict[
-            "critique"
-        ],  # the judge's reasoning → drives better proposals
+        "critique": verdict["critique"],              # the judge's reasoning → drives better proposals
         "rubric_breakdown": verdict.get("by_criterion"),
     }
 ```
@@ -92,23 +84,20 @@ Fix it inside `evaluate` by averaging N samples:
 def evaluate(candidate, example, N=4):
     outs = [run_my_model(candidate, example) for _ in range(N)]
     scores = [grade(o, example) for o in outs]
-    score = sum(scores) / len(scores)  # mean correctness ~ pass@1 estimate
-    return score, {
-        "score": score,
-        "n": N,
-        "samples": [{"out": o, "s": s} for o, s in zip(outs, scores)],
-    }
+    score = sum(scores) / len(scores)           # mean correctness ~ pass@1 estimate
+    return score, {"score": score, "n": N,
+                   "samples": [{"out": o, "s": s} for o, s in zip(outs, scores)]}
 ```
 Trade-off: N× more eval calls (budget). Pick N to balance variance vs `max_evals`.
 
 ## Multi-objective optimization (e.g. correctness AND speed)
 The gepa backend keeps an objective-level Pareto front (the other backends ignore
-`info["scores"]`). To use it, **return per-objective metrics under `info["scores"]`** — the adapte
+`info["scores"]`). To use it, **return per-objective metrics under `info["scores"]`** — the adapter
 forwards them as `objective_scores`:
 ```python
 return score, {
     "score": score,                        # the scalar the optimizer selects on
-    "scores": {"correct": correct_rate,    # per-objective metrics for the Pareto frontie
+    "scores": {"correct": correct_rate,    # per-objective metrics for the Pareto frontier
                "speedup": speedup},        # all "higher is better"
     ...
 }
@@ -126,9 +115,7 @@ Prefer a **gated** objective:
 def score_fn(result):
     if not (result["compiled"] and result["correct"]):
         return 0.0
-    return f(
-        result["speedup"]
-    )  # e.g. min(speedup / target, 1.0), monotonically increasing
+    return f(result["speedup"])   # e.g. min(speedup / target, 1.0), monotonically increasing
 ```
 Then the only way to raise the score is to be correct **and** better on what you care about. See
 `gotchas.md` for the full reward-hacking story.
@@ -137,7 +124,7 @@ Then the only way to raise the score is to be correct **and** better on what you
 - Make `evaluate` side-effect-free and resumable; it may run concurrently (`max_concurrency`,
   `engine.max_workers`) and be retried.
 - Set a seed in `engine_config={"engine": {"seed": 0}}` for reproducible search order.
-- Log your own per-eval record (id, score, sub-metrics, candidate hash) — you'll want it fo
+- Log your own per-eval record (id, score, sub-metrics, candidate hash) — you'll want it for
   analysis; the eval server's `output_dir` per-eval JSON covers the basics, and `oa.log()` covers
   in-feedback diagnostics.
 - Catch and *return* failures as low scores with `info["error_*"]`, rather than raising —

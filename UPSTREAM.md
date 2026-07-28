@@ -11,3 +11,11 @@ This repository adapts GEPA's `gepa-optimize-anything` skill for Codex.
 The method documentation and references remain upstream work. This port
 changes the agent execution boundary from Claude Code to Codex and adds tests
 for that translation.
+
+Within `plugins/gepa-optimize-anything/skills/gepa-optimize-anything-codex/`,
+`references/tracking.md` and `references/writing_evaluators.md` remain exact
+copies of the pinned source after line-ending normalization. `SKILL.md`,
+`references/api.md`, and `references/gotchas.md` contain only the Codex-specific
+install, model, budget, sandbox, and compatibility notes needed by this port.
+`tests/test_upstream_fidelity.py` pins the unchanged-file hashes and rejects the
+known text-truncation defects repaired from the original release.

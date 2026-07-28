@@ -1,0 +1,25 @@
+{
+  "name": "gepa-optimize-anything",
+  "version": "0.2.0",
+  "description": "Run GEPA Optimize Anything through Codex.",
+  "author": {
+    "name": "Shawn Patterson",
+    "url": "https://github.com/sh-patterson"
+  },
+  "homepage": "https://github.com/sh-patterson/gepa-optimize-anything-codex",
+  "repository": "https://github.com/sh-patterson/gepa-optimize-anything-codex",
+  "license": "MIT",
+  "keywords": ["gepa", "optimization", "codex", "autoresearch"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "GEPA Optimize Anything for Codex",
+    "shortDescription": "Optimize scored text artifacts through Codex.",
+    "longDescription": "Run GEPA's text optimization engines through Codex, including the Codex compatibility command for agentic engines.",
+    "developerName": "Shawn Patterson",
+    "category": "Engineering",
+    "capabilities": ["Interactive", "Write"],
+    "defaultPrompt": [
+      "Use GEPA Optimize Anything through Codex to improve this scored text artifact."
+    ]
+  }
+}
