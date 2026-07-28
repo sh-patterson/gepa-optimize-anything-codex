@@ -103,7 +103,7 @@ the `max_token_cost` → `engine.max_reflection_cost` cap.
 ```python
 engine_config = {
     "reflection": {  # -> ReflectionConfig
-        "reflection_lm": "anthropic/claude-sonnet-4-6",  # default "openai/gpt-5.1"; see "Proposer LM"
+        "reflection_lm": "openai/gpt-5.6-luna",  # Codex-first choice; upstream default is gpt-5.1
         "reflection_lm_kwargs": {
             "reasoning_effort": "high"
         },  # litellm kwargs (temperature, thinking, …)

@@ -31,7 +31,7 @@ the Codex CLI, `jq`, and either `codex login`, `CODEX_API_KEY`, or
 `OPENAI_API_KEY`.
 
 The adapter translates GEPA's upstream `claude-sonnet-4-6` default to
-`gpt-5.6-luna` with `medium` reasoning. It also accepts the target model name
+`gpt-5.6-luna` with `high` reasoning. It also accepts the target model name
 when a caller supplies it directly. Other source model names fail before
 Codex starts. Its token-derived USD field is a conservative standard-tier
 estimate that prices uncached input at the cache-write rate and applies the

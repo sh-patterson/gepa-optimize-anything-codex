@@ -101,10 +101,9 @@ pip install "gepa[full] @ git+https://github.com/gepa-ai/gepa.git@f919db0a622e2e
 # [full] pulls cloudpickle — needed to pickle closure evaluators for
                            # parallel workers / opt-in evaluation caching; plain `pip install gepa`
                            # can fail there when your evaluator closes over data.
-# Proposer LLM: the gepa backend's reflection LM defaults to "openai/gpt-5.1" (a LiteLLM id) — set
-# that provider's key (OPENAI_API_KEY), or pass your own id (e.g. "anthropic/claude-sonnet-4-6" with
-# ANTHROPIC_API_KEY, or a Bedrock ARN with AWS creds). You can also pass any callable implementing
-# GEPA's LM protocol — a self-hosted / custom inference engine — instead of a model-id string.
+# Proposer LLM: upstream GEPA defaults to "openai/gpt-5.1". For a Codex-first run, explicitly use
+# "openai/gpt-5.6-luna" with reasoning_effort="high", as shown below. Set OPENAI_API_KEY. You can
+# also pass another LiteLLM id or any callable implementing GEPA's LM protocol.
 # Agentic backends (autoresearch, meta_harness) additionally need the Codex CLI and this skill's
 # `scripts/claude` compatibility command on PATH (plus `jq` for the generated eval.sh).
 # Resolve SKILL_DIR to the directory containing this installed SKILL.md:
@@ -215,8 +214,9 @@ result = optimize_anything(
         output_dir="outputs/my_run",  # eval server: per-eval JSON, progress_log.jsonl, summary.json
         engine_config={  # gepa backend: a GEPAConfig-shaped dict, validated strictly —
             "reflection": {  #   an unknown key raises TypeError immediately (fail fast)
-                # a LiteLLM id (set the provider key) OR any callable implementing the LM protocol
-                "reflection_lm": "anthropic/claude-sonnet-4-6",
+                # Codex-first teacher default. Upstream GEPA itself defaults to openai/gpt-5.1.
+                "reflection_lm": "openai/gpt-5.6-luna",
+                "reflection_lm_kwargs": {"reasoning_effort": "high"},
                 "reflection_minibatch_size": 5,
             },
             "engine": {"max_workers": 32, "seed": 0},  # seed = reproducibility
