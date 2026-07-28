@@ -7,16 +7,12 @@ other backends have no built-in tracker; for them, rely on the eval server's `ou
 
 ```python
 result = optimize_anything(
-    seed_candidate=SEED,
-    evaluator=evaluate,
-    dataset=trainset,
-    valset=valset,
+    seed_candidate=SEED, evaluator=evaluate, dataset=trainset, valset=valset,
     config=OptimizeAnythingConfig(
-        engine="gepa",
-        max_evals=300,
+        engine="gepa", max_evals=300,
         engine_config={
             "reflection": {"reflection_lm": "anthropic/claude-sonnet-4-6"},
-            "tracking": {  # -> TrackingConfig
+            "tracking": {                       # -> TrackingConfig
                 "use_wandb": True,
                 "wandb_init_kwargs": {"project": "my-gepa-run", "name": "experiment-1"},
             },

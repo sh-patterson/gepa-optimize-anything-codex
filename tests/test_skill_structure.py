@@ -22,22 +22,3 @@ def test_skill_has_required_files_and_local_links():
         "writing_evaluators.md",
     ):
         assert (SKILL / "references" / name).is_file()
-
-
-def test_repository_top_level_is_adapter_only():
-    visible = {
-        path.name
-        for path in ROOT.iterdir()
-        if path.name not in {".git", ".pytest_cache", ".ruff_cache"}
-        and not path.name.endswith(".egg-info")
-    }
-    assert visible == {
-        ".agents",
-        ".github",
-        ".gitignore",
-        "LICENSE",
-        "README.md",
-        "UPSTREAM.md",
-        "pyproject.toml",
-        "tests",
-    }

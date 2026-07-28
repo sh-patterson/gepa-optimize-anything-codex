@@ -36,7 +36,7 @@ sizing rule: ≳ 15–20 × the selection set). Set it explicitly. Only if you s
 
 ## 5. `engine_config` is validated strictly — unknown keys raise `TypeError`
 Every backend parses `engine_config` into a typed dataclass (`GEPAConfig` for gepa,
-`BestOfNConfig` / `AutoResearchConfig` / `MetaHarnessConfig` for the others), so a typo'd o
+`BestOfNConfig` / `AutoResearchConfig` / `MetaHarnessConfig` for the others), so a typo'd or
 wrong-backend key fails **immediately at construction** with a `TypeError` — it is *not* silently
 dropped. The practical consequence: swapping `engine=` requires swapping the whole `engine_config`
 block, and old-API keys (`claude_code_agent`, top-level `reflection_lm_kwargs`, `objective`,
@@ -59,10 +59,11 @@ work:
 - **You opted into evaluation caching** (`engine_config={"engine": {"cache_evaluation": True}}` —
   it is **off by default**). Then `max_evals` counts only cache *misses*: a converged search keeps
   emitting cache-hitting candidates without consuming eval budget and can spin until your process
-  times out, still spending proposer-LLM tokens. With caching on, `stop_at_score` and/o
-  `max_token_cost` (plus a wall-clock `timeout` on the launched process) are mandatory.
-Agentic backends also spend LLM tokens between evals — cap them with `max_token_cost`
-(enforced as `--max-budget-usd`).
+  times out, still spending proposer-LLM tokens. With caching on, `stop_at_score` and/or a compatible
+  cost or wall-clock bound are mandatory.
+This Codex adapter rejects agentic `max_token_cost` because it cannot enforce GEPA's
+`--max-budget-usd` contract. Use `max_evals`, `stop_at_score`, a host timeout, and an account spend
+limit.
 
 ## 8. Pick the right mode
 The mode is implicit in which sets you pass (`api.md`): no `dataset`/`valset` → single-task;
@@ -104,9 +105,9 @@ your evaluator stops the whole optimization. Either catch failures yourself and 
 - [ ] `max_evals` set explicitly and sized for many proposals (≳ 15–20 × the size of the selection
       set: `len(valset)` in generalization, `len(dataset)` in multi-task, or just ≳ 15–20 in
       single-task) — see SKILL.md
-- [ ] `stop_at_score` set when the metric has a ceiling; `max_token_cost` for agentic backends
+- [ ] `stop_at_score` set when the metric has a ceiling; `max_token_cost` only where enforceable
 - [ ] `engine_config` keys match the chosen backend (typos raise `TypeError`, #5)
 - [ ] `run_dir` + `output_dir` set (so artifacts persist)
 - [ ] `test_set` passed if you need an unbiased number to report
-- [ ] for agentic backends: Codex adapter `claude` on PATH + Codex auth, `jq` installed, and on Linux `bwrap`
-      (bubblewrap) for the default `sandbox=True` (`scripts/preflight.py`)
+- [ ] for agentic backends: Codex adapter `claude` on PATH + Codex auth, `jq` installed, and
+      `sandbox=False` for GEPA's outer jail (`scripts/preflight.py`)

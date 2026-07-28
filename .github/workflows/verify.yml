@@ -12,6 +12,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: python -m pip install -e ".[dev]"
+      - run: python -m pip install -e ".[dev,live]"
       - run: python -m pytest -q -m "not live"
       - run: python -m ruff check .
