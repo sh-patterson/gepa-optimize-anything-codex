@@ -229,7 +229,7 @@ prior-stage artifacts into the agent's work dir for hand-rolled sequential compo
 
 ## `Result`
 ```python
-result.best_candidate  # st
+result.best_candidate  # str
 result.best_score  # float (on valset/selection set)
 result.total_evals  # int
 result.eval_log  # list[dict]

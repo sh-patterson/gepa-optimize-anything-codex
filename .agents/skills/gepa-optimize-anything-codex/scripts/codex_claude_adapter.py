@@ -25,10 +25,10 @@ VALUE_FLAGS = {
 
 @dataclass(frozen=True)
 class AgentRequest:
-    prompt: st
-    model: st
-    reasoning_effort: st
-    upstream_session_id: st
+    prompt: str
+    model: str
+    reasoning_effort: str
+    upstream_session_id: str
     resume: bool
     requested_budget_usd: float | None
     cwd: Path
@@ -38,9 +38,9 @@ class AgentRequest:
 class CodexRun:
     returncode: int
     thread_id: str | None
-    final_message: st
+    final_message: str
     usage: dict[str, int]
-    stderr: st
+    stderr: str
     duration_ms: int
 
 
@@ -136,7 +136,7 @@ def _state_dir() -> Path:
         raise RuntimeError("CODEX_ADAPTER_STATE_DIR is required")
     state_dir = Path(configured)
     state_dir.mkdir(parents=True, exist_ok=True)
-    return state_di
+    return state_dir
 
 
 def _load_mapping(state_dir: Path) -> dict[str, str]:

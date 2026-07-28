@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / ".agents" / "skills" / "gepa-optimize-anything-codex" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-from codex_claude_adapter import (
+from codex_claude_adapter import (  # noqa: E402
     _codex_command,
     parse_agent_request,
     parse_codex_output,
@@ -152,7 +152,7 @@ def test_live_codex_round_trip(tmp_path):
         timeout=300,
     )
     payload = json.loads(proc.stdout)
-    assert proc.returncode == 0, proc.stder
+    assert proc.returncode == 0, proc.stderr
     assert payload["subtype"] == "success"
     assert payload["result"].strip().lower() == "ok"
     assert payload["total_cost_usd"] > 0

@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / ".agents" / "skills" / "gepa-optimize-anything-codex" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-from codex_claude_adapter import parse_agent_request
+from codex_claude_adapter import parse_agent_request  # noqa: E402
 
 
 def test_claude_settings_json_is_not_treated_as_prompt(tmp_path):
