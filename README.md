@@ -24,7 +24,7 @@ cp -R gepa-optimize-anything-codex/.agents/skills/gepa-optimize-anything-codex \
 Install GEPA and authenticate the Codex CLI:
 
 ```bash
-pip install "gepa[full]"
+pip install "gepa @ git+https://github.com/gepa-ai/gepa.git@f919db0a622e2e9f9204779b81fe00cc1b2d808f"
 codex --version
 export OPENAI_API_KEY="..."
 export CODEX_ADAPTER_STATE_DIR="$PWD/.codex-adapter-state"
@@ -60,7 +60,7 @@ mounts. Keep runs in a disposable work directory when using `sandbox=False`.
 ## Scope
 
 This repository contains only the Codex skill port and compatibility command.
-It does not include a benchmark, evaluator, domain prompt, article corpus, o
+It does not include a benchmark, evaluator, domain prompt, article corpus, or
 optimization result. Users supply the artifact and evaluator that GEPA runs.
 
 The upstream skill is MIT licensed and pinned in

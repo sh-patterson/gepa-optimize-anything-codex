@@ -37,6 +37,7 @@ def test_autoresearch_improves_a_deterministic_text_candidate(tmp_path: Path):
             max_evals=10,
             max_token_cost=0.20,
             stop_at_score=1.0,
+            sandbox=False,
             run_dir=str(tmp_path / "run"),
             output_dir=str(tmp_path / "output"),
             engine_config={
