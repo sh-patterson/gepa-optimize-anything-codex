@@ -12,7 +12,14 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / ".agents" / "skills" / "gepa-optimize-anything-codex" / "scripts"
+SCRIPTS = (
+    ROOT
+    / "plugins"
+    / "gepa-optimize-anything"
+    / "skills"
+    / "gepa-optimize-anything-codex"
+    / "scripts"
+)
 sys.path.insert(0, str(SCRIPTS))
 
 from codex_claude_adapter import (  # noqa: E402

@@ -12,6 +12,7 @@ The method documentation and references remain upstream work. This port
 changes the agent execution boundary from Claude Code to Codex and adds tests
 for that translation.
 
+Within `plugins/gepa-optimize-anything/skills/gepa-optimize-anything-codex/`,
 `references/tracking.md` and `references/writing_evaluators.md` remain exact
 copies of the pinned source after line-ending normalization. `SKILL.md`,
 `references/api.md`, and `references/gotchas.md` contain only the Codex-specific

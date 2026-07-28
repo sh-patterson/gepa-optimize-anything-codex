@@ -10,7 +10,15 @@ description: >-
 ---
 # `optimize_anything`
 
-This is a Codex port of GEPA's upstream Claude Code skill. For the agentic backends, place this skill's `scripts/` directory at the front of `PATH`. Its `claude` compatibility command translates the supported Claude CLI contract into `codex exec`.
+This is a Codex port of GEPA's upstream Claude Code skill. Its `claude` compatibility command translates the supported Claude CLI contract into `codex exec`.
+
+For every `autoresearch` or `meta_harness` run:
+
+1. Resolve `SKILL_DIR` to the absolute directory containing this `SKILL.md`. Use the installed skill path supplied by Codex. Do not ask the user to find the plugin cache.
+2. Install pinned GEPA if the active Python environment does not already provide it.
+3. Set `CODEX_ADAPTER_STATE_DIR` to a run-specific writable directory.
+4. Run `"$SKILL_DIR/scripts/preflight.py" --engine <engine> --no-sandbox`.
+5. Launch the user's Python program from the same shell with `"$SKILL_DIR/scripts"` first on `PATH`.
 
 ## Codex adapter limits
 
@@ -98,8 +106,9 @@ pip install "gepa[full] @ git+https://github.com/gepa-ai/gepa.git@f919db0a622e2e
 # ANTHROPIC_API_KEY, or a Bedrock ARN with AWS creds). You can also pass any callable implementing
 # GEPA's LM protocol — a self-hosted / custom inference engine — instead of a model-id string.
 # Agentic backends (autoresearch, meta_harness) additionally need the Codex CLI and this skill's
-# `scripts/claude` compatibility command on PATH (plus `jq` for the generated eval.sh):
-export PATH="/path/to/gepa-optimize-anything-codex/.agents/skills/gepa-optimize-anything-codex/scripts:$PATH"
+# `scripts/claude` compatibility command on PATH (plus `jq` for the generated eval.sh).
+# Resolve SKILL_DIR to the directory containing this installed SKILL.md:
+export PATH="$SKILL_DIR/scripts:$PATH"
 export CODEX_ADAPTER_STATE_DIR="$PWD/.codex-adapter-state"
 # This Linux-only adapter requires sandbox=False for agentic engines. GEPA's
 # bubblewrap sandbox cannot reliably expose the Codex installation and auth state.

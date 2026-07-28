@@ -5,7 +5,13 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).parents[1]
-SKILL = ROOT / ".agents" / "skills" / "gepa-optimize-anything-codex"
+SKILL = (
+    ROOT
+    / "plugins"
+    / "gepa-optimize-anything"
+    / "skills"
+    / "gepa-optimize-anything-codex"
+)
 
 PINNED_UPSTREAM_SHA256 = {
     "SKILL.md": "d2addb90007d93da8bd93c556940a89b686ae0de51f9f4d3ce47041d23aaa599",
@@ -22,7 +28,7 @@ PINNED_UPSTREAM_SHA256 = {
 }
 
 REVIEWED_LOCAL_SHA256 = {
-    "SKILL.md": "1fce813f7dc821d28ce14c1ad7f4dcb58ee5ddb4fe1a36925cde18ab1006516b",
+    "SKILL.md": "d0ac5fdde0a418598c3dbf9c09bd63d9c8474bb7a6b12c34e1c94d36ae069001",
     "references/api.md": (
         "0262003be27b4100a3b880c092485d26f7040122e153eb50c8de2ed5498b41e5"
     ),

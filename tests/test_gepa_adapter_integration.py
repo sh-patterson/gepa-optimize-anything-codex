@@ -8,7 +8,14 @@ import pytest
 
 
 ROOT = Path(__file__).parents[1]
-SCRIPTS = ROOT / ".agents" / "skills" / "gepa-optimize-anything-codex" / "scripts"
+SCRIPTS = (
+    ROOT
+    / "plugins"
+    / "gepa-optimize-anything"
+    / "skills"
+    / "gepa-optimize-anything-codex"
+    / "scripts"
+)
 
 
 @pytest.mark.skipif(os.name != "posix", reason="the compatibility command is Linux-only")
