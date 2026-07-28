@@ -29,6 +29,7 @@ def test_repository_top_level_is_adapter_only():
         path.name
         for path in ROOT.iterdir()
         if path.name not in {".git", ".pytest_cache", ".ruff_cache"}
+        and not path.name.endswith(".egg-info")
     }
     assert visible == {
         ".agents",
