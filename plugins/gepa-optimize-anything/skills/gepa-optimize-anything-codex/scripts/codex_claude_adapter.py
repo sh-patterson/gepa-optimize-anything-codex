@@ -63,7 +63,7 @@ class CodexTerminalState:
 
 def parse_agent_request(argv: list[str], cwd: Path) -> AgentRequest:
     source_model = "claude-sonnet-4-6"
-    effort = "medium"
+    effort = "high"
     session_id: str | None = None
     requested_budget: float | None = None
     resume = False

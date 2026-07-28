@@ -67,6 +67,8 @@ def test_initial_and_resumed_commands_map_to_codex_threads(tmp_path):
 
     assert initial_command[:2] == ["/bin/codex", "exec"]
     assert resumed_command[:3] == ["/bin/codex", "exec", "resume"]
+    assert 'model_reasoning_effort="medium"' in initial_command
+    assert 'model_reasoning_effort="high"' in resumed_command
     assert "codex-thread-1" in resumed_command
     assert "--ephemeral" not in initial_command
 
@@ -88,7 +90,9 @@ def test_upstream_model_is_translated_to_a_distinct_codex_model(tmp_path):
 
     assert request.source_model == "claude-sonnet-4-6"
     assert request.target_model == "gpt-5.6-luna"
+    assert request.reasoning_effort == "high"
     assert command[command.index("-m") + 1] == "gpt-5.6-luna"
+    assert 'model_reasoning_effort="high"' in command
     assert "claude-sonnet-4-6" not in command
     assert "features.standalone_web_search=false" in command
 
