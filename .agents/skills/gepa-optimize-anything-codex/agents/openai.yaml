@@ -1,0 +1,4 @@
+interface:
+  display_name: "GEPA Optimize Anything for Codex"
+  short_description: "Optimize scored text artifacts through Codex"
+  default_prompt: "Use GEPA Optimize Anything through Codex to improve this scored text artifact."
