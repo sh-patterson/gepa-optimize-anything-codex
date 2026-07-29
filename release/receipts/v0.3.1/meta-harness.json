@@ -1,0 +1,101 @@
+{
+  "authentication": {
+    "child_api_keys_present": false,
+    "credentials_recorded": false,
+    "mode": "chatgpt_login"
+  },
+  "commits": {
+    "gepa": "41ca7c3a3d1cc502ab357163325b9751a05507f6",
+    "plugin": "2ddc6639b6f505a3a88d129d55e2b6b9352d105a",
+    "runner": "2ddc6639b6f505a3a88d129d55e2b6b9352d105a"
+  },
+  "cost": {
+    "adapter_reported_usd": 0.0432338,
+    "agreement": true,
+    "cost_status": "standard_tier_upper_estimate_from_observed_usage",
+    "estimated_usd": 0.0432338,
+    "eval_usd": 0.0,
+    "total_usd": 0.0432338
+  },
+  "engine": "meta_harness",
+  "file_hashes": {
+    "adapter": "657228f4a4d3ffcaa492b91ea15d3cd9321b1ce6984ae70904786a2acee7a95e",
+    "invocation": "29daf0978327f7541491fe44f4cf3ece7d307198f6bf982aedcb598b2c6d6767",
+    "launcher": "47922e2d9117dfacc34e4733cc451a0bb95ec1e0133f40413309a2bd48b7a43a",
+    "manifest": "c70f3d3efeee96fc68d042932f154edc0337f64f1965efc71d1fe1d11c8fa789",
+    "plugin_json": "e1eb356c010b82d76b16b5601acb6a90e5db127e9d4d3fbd2f4c76e3cefe902e",
+    "session": "2f900c12fdde0bb0e34c117929c2a139ab25d4a3ddc9332cd6ab2c13049391d5",
+    "skill": "af5b534f308fb12b0ab141cb1e744e6857708b3db51f98bfa3d9490d0da5bf81",
+    "summary": "5f994a492971b8d3ade6b2999aedbd8923594afcc1e6aff621fed47e077383e2"
+  },
+  "policy": {
+    "engine": "meta_harness",
+    "host_timeout_seconds": 600,
+    "max_adapter_invocations": 1,
+    "max_evals": 3,
+    "proposer_iterations": 1,
+    "reasoning_effort": "high",
+    "retry_count": 0,
+    "sandbox": true,
+    "stop_at_score": 1.0,
+    "target_model": "gpt-5.6-luna"
+  },
+  "provenance": {
+    "installed_plugin": true,
+    "plugin_manifest": "/home/shawn/.cache/gepa-optimize-anything-codex/release-v031-2740a23b/home/.cache/gepa-optimize-anything-codex/codex/plugins/cache/gepa-optimize-anything-codex/gepa-optimize-anything/0.3.1/.codex-plugin/plugin.json",
+    "skill_path": "/home/shawn/.cache/gepa-optimize-anything-codex/release-v031-2740a23b/home/.cache/gepa-optimize-anything-codex/codex/plugins/cache/gepa-optimize-anything-codex/gepa-optimize-anything/0.3.1/skills/gepa-optimize-anything-codex"
+  },
+  "receipt_path": "/home/shawn/.cache/gepa-optimize-anything-codex/release-v031-2740a23b/home/.cache/gepa-optimize-anything-codex/runs/release-dogfood-5568d3beed0542b1bc55fa683988d5a5/output/release_receipt.json",
+  "result": {
+    "best_score": 1.0,
+    "improved": true,
+    "total_evals": 2
+  },
+  "sandbox": {
+    "enabled": true,
+    "runtime": "bubblewrap"
+  },
+  "schema_version": 2,
+  "session_mapping": [
+    {
+      "codex_thread_id": "019faf19-7fdf-7652-8a82-16ea9b4d5a99",
+      "resume": false,
+      "upstream_session_id": "5e0d900e-90e0-4b07-aea6-d4685793a562"
+    }
+  ],
+  "source": {
+    "adapter_module": "/home/shawn/.cache/gepa-optimize-anything-codex/release-v031-2740a23b/home/.local/share/gepa-optimize-anything-codex/bin/codex_claude_adapter.py",
+    "codex": "/home/shawn/.cache/gepa-optimize-anything-codex/release-v031-2740a23b/home/.local/node_modules/@openai/codex/bin/codex.js",
+    "codex_home": "/home/shawn/.cache/gepa-optimize-anything-codex/release-v031-2740a23b/home/.cache/gepa-optimize-anything-codex/codex",
+    "gepa_commit": "41ca7c3a3d1cc502ab357163325b9751a05507f6",
+    "gepa_module": "/home/shawn/.cache/gepa-optimize-anything-codex/release-v031-2740a23b/venv/lib/python3.12/site-packages/gepa/__init__.py",
+    "gepa_version": "0.1.4",
+    "launcher": "/home/shawn/.cache/gepa-optimize-anything-codex/release-v031-2740a23b/home/.local/share/gepa-optimize-anything-codex/bin/claude",
+    "plugin_commit": "2ddc6639b6f505a3a88d129d55e2b6b9352d105a",
+    "plugin_manifest": "/home/shawn/.cache/gepa-optimize-anything-codex/release-v031-2740a23b/home/.cache/gepa-optimize-anything-codex/codex/plugins/cache/gepa-optimize-anything-codex/gepa-optimize-anything/0.3.1/.codex-plugin/plugin.json",
+    "probe_success": true,
+    "sandbox_runtime": "bubblewrap",
+    "skill_path": "/home/shawn/.cache/gepa-optimize-anything-codex/release-v031-2740a23b/home/.cache/gepa-optimize-anything-codex/codex/plugins/cache/gepa-optimize-anything-codex/gepa-optimize-anything/0.3.1/skills/gepa-optimize-anything-codex",
+    "skill_source": "installed_plugin",
+    "skill_version": "0.3.1",
+    "stage_bin": "/home/shawn/.cache/gepa-optimize-anything-codex/release-v031-2740a23b/home/.local/share/gepa-optimize-anything-codex/bin",
+    "state_dir": "/home/shawn/.cache/gepa-optimize-anything-codex/release-v031-2740a23b/home/.cache/gepa-optimize-anything-codex/runs/release-dogfood-5568d3beed0542b1bc55fa683988d5a5/adapter-state"
+  },
+  "status": "success",
+  "terminal": {
+    "ambiguous_retry": false,
+    "return_code": 0,
+    "status": "completed"
+  },
+  "usage": {
+    "cache_write_input_tokens": 0,
+    "cached_input_tokens": 104448,
+    "input_tokens": 120172,
+    "output_tokens": 2189,
+    "reasoning_output_tokens": 653
+  },
+  "versions": {
+    "gepa": "0.1.4",
+    "plugin": "0.3.1"
+  }
+}

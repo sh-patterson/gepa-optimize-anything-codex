@@ -1,0 +1,65 @@
+{
+  "authentication": {
+    "child_api_keys_present": false,
+    "mode": "chatgpt_login"
+  },
+  "cost": {
+    "estimated_usd": 0.010942799999999999,
+    "status": "standard_tier_upper_estimate_from_observed_usage"
+  },
+  "duration_ms": 11661,
+  "engine": "best_of_n",
+  "hashes": {
+    "adapter": "657228f4a4d3ffcaa492b91ea15d3cd9321b1ce6984ae70904786a2acee7a95e",
+    "codex_lm": "c2622eb89fa8a17569ee12ee9c0213c160f3329bbaab304191ffb23d75939222",
+    "plugin_manifest": "e1eb356c010b82d76b16b5601acb6a90e5db127e9d4d3fbd2f4c76e3cefe902e",
+    "runner": "19a06ab39c76e82573a5dc44d1d39ba8488a6112095d12d5a4cb3f3aec82d4b3",
+    "skill": "af5b534f308fb12b0ab141cb1e744e6857708b3db51f98bfa3d9490d0da5bf81"
+  },
+  "invocation_count": 2,
+  "model": "gpt-5.6-luna",
+  "policy": {
+    "max_adapter_invocations": 4,
+    "max_evals": 4,
+    "max_n": 3,
+    "pre_submission_retries": 0,
+    "reasoning_effort": "high"
+  },
+  "provenance": {
+    "gepa_commit": "41ca7c3a3d1cc502ab357163325b9751a05507f6",
+    "installed_plugin": true,
+    "plugin_manifest": "/home/shawn/.cache/gepa-optimize-anything-codex/release-v031-2740a23b/home/.cache/gepa-optimize-anything-codex/codex/plugins/cache/gepa-optimize-anything-codex/gepa-optimize-anything/0.3.1/.codex-plugin/plugin.json",
+    "plugin_version": "0.3.1",
+    "repository_commit": "2740a234cd2daddc2a5c71ee27df8aa9083249cd",
+    "skill_path": "/home/shawn/.cache/gepa-optimize-anything-codex/release-v031-2740a23b/home/.cache/gepa-optimize-anything-codex/codex/plugins/cache/gepa-optimize-anything-codex/gepa-optimize-anything/0.3.1/skills/gepa-optimize-anything-codex"
+  },
+  "provider": "codex",
+  "receipt_path": "/home/shawn/.cache/gepa-optimize-anything-codex/release-v031-2740a23b/receipts/best_of_n/best_of_n-receipt.json",
+  "result": {
+    "best_candidate_sha256": "58c3bc54d985a531c91b629c3d1c205299056d0b56e60e3d54afd118e2870170",
+    "best_score": 1.0,
+    "eval_count": 2,
+    "improved": true
+  },
+  "retry_count": 0,
+  "sandbox": {
+    "bubblewrap_probe_success": true,
+    "codex_workspace_write": true
+  },
+  "schema_version": 2,
+  "session_mapping": [
+    {
+      "codex_thread_id": "019faf13-2127-7832-8a18-18a8bf77f0f6",
+      "upstream_session_id": "94e2503626ac428f936ef327c74e7bec"
+    },
+    {
+      "codex_thread_id": "019faf13-3633-7050-929f-bcb54c62ab8c",
+      "upstream_session_id": "e94ddbf0a8614a3581a63c23cecfffc1"
+    }
+  ],
+  "status": "success",
+  "usage": {
+    "input_tokens": 26712,
+    "output_tokens": 86
+  }
+}
