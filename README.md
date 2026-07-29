@@ -50,17 +50,18 @@ Do not set `max_token_cost` for `autoresearch` or `meta_harness`. GEPA sends it
 to the compatibility command as `--max-budget-usd`; the adapter rejects that
 flag before spawning Codex because it cannot enforce a USD ceiling.
 
-Codex agentic runs use a bounded structural default instead:
+Callers must explicitly set the bounded GEPA configuration for Codex agentic
+runs:
 
-- at most four adapter starts in one state directory;
-- one automatic retry only when Codex is known not to have started;
 - `max_evals=10` for either agentic engine;
 - for `meta_harness`, `max_iterations=3` and
   `max_candidates_per_iter=3`.
 
-The retry consumes one of the four starts. Ambiguous, usage-bearing, and
-completed calls are never retried. Set `CODEX_ADAPTER_MAX_INVOCATIONS` to a
-different positive integer to override the adapter ceiling. Set
+The adapter alone enforces a default of four atomic starts per state directory.
+It retries once only when Codex is known not to have started. The retry consumes
+one of the four starts. Ambiguous, usage-bearing, and completed calls are never
+retried. Set `CODEX_ADAPTER_MAX_INVOCATIONS` to a different positive integer to
+override the adapter ceiling. Set
 `stop_at_score` whenever the metric has a known ceiling. A host timeout remains
 an optional emergency stop, not a default run budget.
 

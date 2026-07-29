@@ -34,12 +34,12 @@ PINNED_UPSTREAM_SHA256 = {
 }
 
 REVIEWED_LOCAL_SHA256 = {
-    "SKILL.md": "44cf379ab70e38ab582107d4ab7fe047e5869199877705c24e46fc58f14b9800",
+    "SKILL.md": "0eeb408a18cae89c9495e1363a6db1133406ebeb80103bfbd12a3045354e8651",
     "references/api.md": (
-        "9ff22110b5458352d96db35b8a9d14d15da29741cbfca18f8c583aba6a9170f8"
+        "e58cf215da2338df2d780e85f8b0be851e9dd0553e2eb43ebd94261d88f390c7"
     ),
     "references/gotchas.md": (
-        "7f20d589eff309c9950e226d333fa29d3535ebdd2a1cbca017c5ae30edc5ae40"
+        "10b9a7be9a9675fe45409b6e5d0afff96d892fd90a683c30859d519f4fa78344"
     ),
     "references/tracking.md": PINNED_UPSTREAM_SHA256["references/tracking.md"],
     "references/writing_evaluators.md": PINNED_UPSTREAM_SHA256[

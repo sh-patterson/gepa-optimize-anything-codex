@@ -68,13 +68,14 @@ def test_package_and_plugin_versions_match():
     assert pyproject["tool"]["setuptools"]["packages"] == []
 
 
-def test_codex_agentic_defaults_are_documented_consistently():
+def test_codex_agentic_caller_limits_and_adapter_default_are_distinct():
     skill = (SKILL / "SKILL.md").read_text(encoding="utf-8")
     api = (SKILL / "references" / "api.md").read_text(encoding="utf-8")
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
     for document in (skill, api, readme):
+        assert "Callers must explicitly set" in document
         assert "max_evals=10" in document
         assert "max_iterations=3" in document
         assert "max_candidates_per_iter=3" in document
-        assert "four" in document.lower()
+        assert "adapter alone enforces a default of four atomic starts" in document

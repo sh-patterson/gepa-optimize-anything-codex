@@ -163,10 +163,9 @@ unreachable over HTTP.
 
 Each iteration the proposer subprocess reads the frontier + history state files, writes
 `pending_eval.json` with 1+ candidates, and the engine benchmarks each through the eval server.
-For Codex-backed runs, this skill overrides the upstream operational defaults in the generated
-configuration: `max_evals=10`, `max_iterations=3`, and `max_candidates_per_iter=3`.
-The compatibility adapter independently permits four total starts per state directory, including
-one retry only when Codex is known not to have started.
+Callers must explicitly set Codex-backed `max_evals=10`, `max_iterations=3`, and
+`max_candidates_per_iter=3`. The adapter alone enforces a default of four atomic starts per state
+directory, including one retry only when Codex is known not to have started.
 
 ### `best_of_n` (baseline) — `engine_config` → `BestOfNConfig`
 Deliberately naive: each sample is one independent LLM call — no feedback, no history, no
