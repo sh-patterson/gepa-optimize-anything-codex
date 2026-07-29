@@ -25,6 +25,7 @@ if str(SCRIPT_DIR) not in sys.path:
 from sandbox_runtime import (  # noqa: E402
     RuntimePaths,
     probe_runtime,
+    resolve_state_dir,
     runtime_environment,
     runtime_paths,
     stage_runtime,
@@ -111,8 +112,10 @@ def _codex_auth_available(codex: str) -> tuple[bool, str]:
     return _codex_login_available(codex)
 
 
-def _sandbox_auth_available(paths: RuntimePaths) -> tuple[bool, str]:
-    environment = runtime_environment(paths)
+def _sandbox_auth_available(
+    paths: RuntimePaths, state_dir: Path
+) -> tuple[bool, str]:
+    environment = runtime_environment(paths, state_dir)
     if environment.get("CODEX_API_KEY"):
         return True, "CODEX_API_KEY"
     return _codex_login_available(str(paths.codex), environment)
@@ -278,6 +281,7 @@ def main() -> int:
                 "install bubblewrap",
             )
             paths = None
+            state_dir = None
             try:
                 paths = stage_runtime(runtime_paths())
                 check("sandbox runtime is staged under ~/.local", True)
@@ -286,26 +290,33 @@ def main() -> int:
             except (OSError, RuntimeError) as exc:
                 check("sandbox runtime is staged under ~/.local", False, str(exc))
             if paths is not None:
+                try:
+                    state_dir = resolve_state_dir(
+                        paths, os.environ.get("CODEX_ADAPTER_STATE_DIR")
+                    )
+                    check("CODEX_ADAPTER_STATE_DIR points to this staged run", True)
+                except (OSError, RuntimeError) as exc:
+                    check(
+                        "CODEX_ADAPTER_STATE_DIR points to this staged run",
+                        False,
+                        str(exc),
+                    )
                 check(
                     "CODEX_HOME points to the staged runtime home",
                     _configured_path_matches("CODEX_HOME", paths.codex_home),
                     f'export CODEX_HOME="{paths.codex_home}"',
                 )
-                check(
-                    "CODEX_ADAPTER_STATE_DIR points to this staged run",
-                    _configured_path_matches(
-                        "CODEX_ADAPTER_STATE_DIR", paths.state_dir
-                    ),
-                    f'export CODEX_ADAPTER_STATE_DIR="{paths.state_dir}"',
-                )
-                codex_auth_ok, codex_auth_source = _sandbox_auth_available(paths)
-                check(
-                    "Sandbox Codex auth (CODEX_API_KEY or staged CLI login)",
-                    codex_auth_ok,
-                    "run `sandbox_runtime.py login` or export CODEX_API_KEY",
-                )
-                if codex_auth_source:
-                    print(f"      authenticated through {codex_auth_source}")
+                if state_dir is not None:
+                    codex_auth_ok, codex_auth_source = _sandbox_auth_available(
+                        paths, state_dir
+                    )
+                    check(
+                        "Sandbox Codex auth (CODEX_API_KEY or staged CLI login)",
+                        codex_auth_ok,
+                        "run `sandbox_runtime.py login` or export CODEX_API_KEY",
+                    )
+                    if codex_auth_source:
+                        print(f"      authenticated through {codex_auth_source}")
                 codex_surface_ok, codex_surface_problem = _codex_exec_surface(
                     str(paths.codex)
                 )
@@ -314,9 +325,9 @@ def main() -> int:
                     codex_surface_ok,
                     codex_surface_problem or "install a supported Codex CLI",
                 )
-                if shutil.which("bwrap"):
+                if shutil.which("bwrap") and state_dir is not None:
                     try:
-                        probe = probe_runtime(paths)
+                        probe = probe_runtime(paths, state_dir)
                         check(
                             "Bubblewrap runtime probe passes without a model call",
                             probe.returncode == 0,

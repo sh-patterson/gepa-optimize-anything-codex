@@ -414,13 +414,14 @@ def stage_and_preflight(
     runtime = _load_module(
         "release_dogfood_runtime", skill / "scripts" / "sandbox_runtime.py"
     )
-    paths = runtime.stage_runtime(runtime.runtime_paths(state_dir=state_dir))
-    probe = runtime.probe_runtime(paths)
+    paths = runtime.stage_runtime(runtime.runtime_paths())
+    state_dir = runtime.resolve_state_dir(paths, state_dir)
+    probe = runtime.probe_runtime(paths, state_dir)
     if probe.returncode != 0:
         raise RuntimeError(
             (probe.stderr or probe.stdout or "sandbox probe failed").strip()
         )
-    environment = runtime.runtime_environment(paths)
+    environment = runtime.runtime_environment(paths, state_dir)
     environment["CODEX_ADAPTER_MAX_INVOCATIONS"] = str(MAX_ADAPTER_INVOCATIONS)
     environment["CODEX_ADAPTER_PRE_SUBMISSION_RETRIES"] = "0"
     mode = authentication_mode(environment)
@@ -449,7 +450,7 @@ def stage_and_preflight(
         "adapter_module": str(paths.adapter_module),
         "codex": str(paths.codex),
         "codex_home": str(paths.codex_home),
-        "state_dir": str(paths.state_dir),
+        "state_dir": str(state_dir),
     }
     return environment, evidence
 

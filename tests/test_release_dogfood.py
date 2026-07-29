@@ -353,8 +353,7 @@ def test_stage_and_preflight_records_actual_staged_paths(
 
     class Runtime:
         @staticmethod
-        def runtime_paths(*, state_dir: Path):
-            assert state_dir == Paths.state_dir
+        def runtime_paths():
             return Paths
 
         @staticmethod
@@ -362,12 +361,18 @@ def test_stage_and_preflight_records_actual_staged_paths(
             return paths
 
         @staticmethod
-        def probe_runtime(paths: Paths):
+        def resolve_state_dir(paths: Paths, state_dir: Path) -> Path:
+            assert state_dir == Paths.state_dir
+            return state_dir
+
+        @staticmethod
+        def probe_runtime(paths: Paths, state_dir: Path):
+            assert state_dir == Paths.state_dir
             return type("Probe", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
         @staticmethod
-        def runtime_environment(paths: Paths) -> dict[str, str]:
-            return {"CODEX_ADAPTER_STATE_DIR": str(paths.state_dir)}
+        def runtime_environment(paths: Paths, state_dir: Path) -> dict[str, str]:
+            return {"CODEX_ADAPTER_STATE_DIR": str(state_dir)}
 
     monkeypatch.setattr(release_dogfood, "_load_module", lambda _name, _path: Runtime)
     monkeypatch.setattr(
@@ -397,7 +402,7 @@ def test_staged_login_preflight_rejects_api_keys(
 
     class Runtime:
         @staticmethod
-        def runtime_paths(*, state_dir: Path):
+        def runtime_paths():
             return Paths
 
         @staticmethod
@@ -405,11 +410,15 @@ def test_staged_login_preflight_rejects_api_keys(
             return paths
 
         @staticmethod
-        def probe_runtime(paths: Paths):
+        def resolve_state_dir(paths: Paths, state_dir: Path) -> Path:
+            return state_dir
+
+        @staticmethod
+        def probe_runtime(paths: Paths, state_dir: Path):
             return type("Probe", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
         @staticmethod
-        def runtime_environment(paths: Paths) -> dict[str, str]:
+        def runtime_environment(paths: Paths, state_dir: Path) -> dict[str, str]:
             return {"OPENAI_API_KEY": "must-not-reach-codex"}
 
     monkeypatch.setattr(release_dogfood, "_load_module", lambda _name, _path: Runtime)

@@ -224,13 +224,14 @@ def _prepare_codex_runtime(skill: Path, work_dir: Path) -> dict[str, Any]:
         / "runs"
         / f"release-inprocess-{uuid4().hex}"
     )
-    paths = runtime.stage_runtime(runtime.runtime_paths(state_dir=state_dir))
-    probe = runtime.probe_runtime(paths)
+    paths = runtime.stage_runtime(runtime.runtime_paths())
+    state_dir = runtime.resolve_state_dir(paths, state_dir)
+    probe = runtime.probe_runtime(paths, state_dir)
     if probe.returncode != 0:
         raise RuntimeError(
             (probe.stderr or probe.stdout or "Bubblewrap runtime probe failed").strip()
         )
-    environment = runtime.runtime_environment(paths)
+    environment = runtime.runtime_environment(paths, state_dir)
     environment.update(
         {
             "CODEX_ADAPTER_AUTH_MODE": "chatgpt_login",
