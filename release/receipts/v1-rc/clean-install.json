@@ -1,0 +1,38 @@
+{
+  "schema_version": 2,
+  "status": "passed",
+  "proof": "installed_marketplace_no_call",
+  "model_calls": 0,
+  "repository_commit": "1462b383bf71cc9d11afe322ec111c3b444e0a80",
+  "gepa": {
+    "commit": "0310bb7b4952d4695718f9f557e450fd6781301e",
+    "source": "https://github.com/gepa-ai/gepa",
+    "version": "0.1.4"
+  },
+  "codex_cli_version": "0.146.0",
+  "plugin": {
+    "marketplace": "gepa-optimize-anything-codex",
+    "name": "gepa-optimize-anything",
+    "version": "0.3.2",
+    "installed": true,
+    "enabled": true,
+    "resolved_outside_source_checkout": true,
+    "resolved_outside_marketplace_archive": true
+  },
+  "sandbox": {
+    "runtime": "bubblewrap",
+    "autoresearch_preflight": "passed",
+    "meta_harness_preflight": "passed",
+    "probe_success": true
+  },
+  "checks": {
+    "non_live_suite": "124 passed, 5 deselected",
+    "ruff": "passed"
+  },
+  "hashes": {
+    "gepa_direct_url": "91c88d1a122934cc47b87d7596d195670deefe8267179aa8a4c4878277657a05",
+    "installed_plugin_manifest": "655f36c6aac2039f31cd4ee4ff53eff75641bdfbb3cc445f2c56f4de47ec2c48",
+    "installed_skill": "06f95f9f1688f5141de2ae0f851513bf190e3dd279fb2e4cb952ae3a69bb5e39",
+    "marketplace_dogfood_runner": "5b44740bfb0bffabfee2db64f1eaac0313a0805d9779a11f74a0e4096170919d"
+  }
+}

@@ -1,0 +1,124 @@
+{
+  "authentication": {
+    "child_api_keys_present": false,
+    "credentials_recorded": false,
+    "mode": "chatgpt_login"
+  },
+  "cost": {
+    "optimizer_estimated_usd": 0.0781805,
+    "outer_estimated_usd": 0.07540375,
+    "source": "codex_terminal_usage_and_adapter_invocation_journal",
+    "status": "standard_tier_upper_estimate_from_observed_usage"
+  },
+  "duration_ms": 153043,
+  "engine": "meta_harness",
+  "hashes": {
+    "evaluator_fixture": "2b809d4bc8e37ad37bc184b2457126a8c7821fa227a77db50d2fb127e863a934",
+    "invocation": "eaab5f2634533e9562623a134718a69dd9022e36812a1ed17be199655ee5a195",
+    "outer_terminal": "7c8fb9e038869bf315de3e1de771aee2b21081011c3b62dd83fa014ea40f5d33",
+    "plugin_manifest": "655f36c6aac2039f31cd4ee4ff53eff75641bdfbb3cc445f2c56f4de47ec2c48",
+    "runner": "5b44740bfb0bffabfee2db64f1eaac0313a0805d9779a11f74a0e4096170919d",
+    "session": "fdff79a8237256e645faf89871f0525606e321ebb0e9f421b8da966e258d3132",
+    "skill": "06f95f9f1688f5141de2ae0f851513bf190e3dd279fb2e4cb952ae3a69bb5e39",
+    "task_runner": "59f7cf9fad18cd9056b081f21ab4feb7205e03df12258173bd6e5e73bd3a3b56"
+  },
+  "policy": {
+    "host_timeout_seconds": 600,
+    "max_adapter_invocations": 1,
+    "max_candidates_per_iteration": 2,
+    "max_evals": 3,
+    "max_iterations": 1,
+    "pre_submission_retries": 0,
+    "reasoning_effort": "high",
+    "sandbox": true,
+    "stop_at_score": 1.0,
+    "target_model": "gpt-5.6-luna"
+  },
+  "proof": "installed_skill_dogfood",
+  "provenance": {
+    "adapter_module": "/home/shawn/.cache/gepa-v1-phase3-1462b38/home/.local/share/gepa-optimize-anything-codex/bin/codex_claude_adapter.py",
+    "codex": "/home/shawn/.cache/gepa-v1-phase3-1462b38/home/.local/node_modules/@openai/codex/bin/codex.js",
+    "codex_home": "/home/shawn/.cache/gepa-v1-phase3-1462b38/home/.cache/gepa-optimize-anything-codex/codex",
+    "gepa_commit": "0310bb7b4952d4695718f9f557e450fd6781301e",
+    "gepa_version": "0.1.4",
+    "installed_plugin": true,
+    "launcher": "/home/shawn/.cache/gepa-v1-phase3-1462b38/home/.local/share/gepa-optimize-anything-codex/bin/claude",
+    "plugin_manifest": "/home/shawn/.cache/gepa-v1-phase3-1462b38/home/.cache/gepa-optimize-anything-codex/codex/plugins/cache/gepa-optimize-anything-codex/gepa-optimize-anything/0.3.2/.codex-plugin/plugin.json",
+    "plugin_version": "0.3.2",
+    "probe_success": true,
+    "repository_commit": "1462b383bf71cc9d11afe322ec111c3b444e0a80",
+    "sandbox_runtime": "bubblewrap",
+    "skill_path": "/home/shawn/.cache/gepa-v1-phase3-1462b38/home/.cache/gepa-optimize-anything-codex/codex/plugins/cache/gepa-optimize-anything-codex/gepa-optimize-anything/0.3.2/skills/gepa-optimize-anything-codex",
+    "stage_bin": "/home/shawn/.cache/gepa-v1-phase3-1462b38/home/.local/share/gepa-optimize-anything-codex/bin",
+    "state_dir": "/home/shawn/.cache/gepa-v1-phase3-1462b38/home/.cache/gepa-optimize-anything-codex/runs/installed-skill-7ac9c0051d7b48e0978797e57e74ec84"
+  },
+  "receipt_path": "/home/shawn/.cache/gepa-v1-phase3-1462b38/live-dogfood/installed-skill-dogfood-receipt.json",
+  "result": {
+    "best_candidate_sha256": "e11a0d69c2987f6cecbd83d717c64a8acaacbbedc52a1d78cf3d66a42ac2ced8",
+    "best_candidate_valid_json": true,
+    "best_score": 1.0,
+    "candidate_hashes": [
+      "cdba9da69a2bc3353e0d41ec676a577b03dd5b61a548db507cd45eab4b4a38a0",
+      "e11a0d69c2987f6cecbd83d717c64a8acaacbbedc52a1d78cf3d66a42ac2ced8"
+    ],
+    "score_trace": [
+      {
+        "candidate_sha256": "b811a35b66dc46c3c979f1e5f15a132ef42bffd9bcf465a37a9d448168d5f52d",
+        "score": 0.125,
+        "valid_json": true
+      },
+      {
+        "candidate_sha256": "cdba9da69a2bc3353e0d41ec676a577b03dd5b61a548db507cd45eab4b4a38a0",
+        "score": 0.375,
+        "valid_json": true
+      },
+      {
+        "candidate_sha256": "e11a0d69c2987f6cecbd83d717c64a8acaacbbedc52a1d78cf3d66a42ac2ced8",
+        "score": 1.0,
+        "valid_json": true
+      }
+    ],
+    "seed_score": 0.125,
+    "total_evals": 3
+  },
+  "sandbox": {
+    "optimizer": "bubblewrap",
+    "outer": "codex_workspace_write",
+    "probe_success": true
+  },
+  "schema_version": 2,
+  "session_mapping": {
+    "codex_thread_id": "019fafb3-3069-7e21-b63e-988c3539ea10",
+    "resume": false,
+    "upstream_session_id": "54229b3f-a345-4a2d-b7c9-2f2508d58dc6"
+  },
+  "status": "success",
+  "terminal": {
+    "optimizer": {
+      "ambiguous_retry": false,
+      "return_code": 0,
+      "status": "completed"
+    },
+    "outer": {
+      "return_code": 0,
+      "status": "completed",
+      "thread_id": "019fafb2-c809-7ab2-ba1e-9dd54e45ead5"
+    }
+  },
+  "usage": {
+    "optimizer_codex": {
+      "cache_write_input_tokens": 0,
+      "cached_input_tokens": 236800,
+      "input_tokens": 256074,
+      "output_tokens": 5068,
+      "reasoning_output_tokens": 1785
+    },
+    "outer_codex": {
+      "cache_write_input_tokens": 0,
+      "cached_input_tokens": 221440,
+      "input_tokens": 256291,
+      "output_tokens": 1616,
+      "reasoning_output_tokens": 950
+    }
+  }
+}
