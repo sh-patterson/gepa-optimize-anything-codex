@@ -13,6 +13,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: sudo apt-get update && sudo apt-get install -y bubblewrap
+      - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: python -m pip install -e ".[dev,live]"
       - run: python -m pytest -q -m "not live"
       - run: python -m ruff check .
@@ -25,6 +26,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: sudo apt-get update && sudo apt-get install -y bubblewrap jq
+      - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: install isolated marketplace
         run: |
           set -euo pipefail
