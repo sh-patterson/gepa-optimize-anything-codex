@@ -23,6 +23,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from sandbox_runtime import probe_runtime, runtime_paths, stage_runtime  # noqa: E402
+from codex_claude_adapter import _max_adapter_invocations  # noqa: E402
 
 OK, BAD = "\033[32mOK\033[0m", "\033[31mFAIL\033[0m"
 problems: list[str] = []
@@ -191,6 +192,18 @@ def main() -> int:
 
     # 3) agentic engines need the Codex-backed compatibility command.
     if a.engine in ("autoresearch", "meta_harness"):
+        try:
+            invocation_limit = _max_adapter_invocations()
+            check(
+                f"Codex adapter invocation cap is {invocation_limit}",
+                True,
+            )
+        except RuntimeError as exc:
+            check(
+                "Codex adapter invocation cap is valid",
+                False,
+                str(exc),
+            )
         check(
             "Linux host (the Codex compatibility command is Linux-only)",
             sys.platform.startswith("linux"),

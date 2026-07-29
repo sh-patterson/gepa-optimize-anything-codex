@@ -28,7 +28,7 @@ The agentic compatibility command supports Linux only. Keep GEPA's default `sand
 
 The adapter maps the pinned GEPA default `claude-sonnet-4-6` to `gpt-5.6-luna`. It rejects other source models before starting Codex. It uses an existing `codex login` when no API key is set, although no-call preflight cannot prove that login's token is fresh. `CODEX_API_KEY` or `OPENAI_API_KEY` selects the documented noninteractive path. The adapter preserves the existing `CODEX_HOME`; it does not copy auth into its session-state directory.
 
-Do not set `max_token_cost` with `autoresearch` or `meta_harness`. GEPA passes it as `--max-budget-usd`; the adapter rejects that flag before spawning Codex because it cannot enforce a USD cap. Use `max_evals`, `stop_at_score`, a host-level timeout, and an OpenAI account spend limit. Set `CODEX_ADAPTER_MAX_INVOCATIONS` to a positive integer to atomically cap adapter starts within a unique state directory; a claimed slot remains consumed after failure. `total_cost_usd` is a conservative standard-tier estimate from observed tokens, not provider billing. The adapter accepts pinned GEPA's exact web-tool denial, disables Codex's standalone web search, and rejects unknown policy values plus `--settings` before Codex starts. Shell network access remains available, matching GEPA's unsandboxed agent path.
+Do not set `max_token_cost` with `autoresearch` or `meta_harness`. GEPA passes it as `--max-budget-usd`; the adapter rejects that flag before spawning Codex because it cannot enforce a USD cap. The Codex structural defaults are `max_evals=10`; for `meta_harness`, `max_iterations=3` and `max_candidates_per_iter=3`; and four total adapter starts per unique state directory. The adapter retries once only when Codex is known not to have started, and that retry consumes an invocation slot. It never retries an ambiguous, usage-bearing, or completed call. Set `CODEX_ADAPTER_MAX_INVOCATIONS` to a different positive integer to override the atomic start cap; a claimed slot remains consumed after failure. Set `stop_at_score` whenever the metric has a known ceiling. A host timeout is an optional emergency stop, not a default budget. `total_cost_usd` is a conservative standard-tier estimate from observed tokens, not provider billing. The adapter accepts pinned GEPA's exact web-tool denial, disables Codex's standalone web search, and rejects unknown policy values plus `--settings` before Codex starts. Shell network access remains available, matching GEPA's unsandboxed agent path.
 
 **Naming, precisely.** `optimize_anything` is the tool: a general API for optimizing text
 artifacts. **GEPA** is one specific optimizer behind it — reflective evolutionary search, the
@@ -127,9 +127,33 @@ export CODEX_ADAPTER_STATE_DIR="$(mktemp -d "$HOME/.cache/gepa-optimize-anything
    baseline, or a constructed `Engine` instance.
 4. **Budget** — `max_evals` (server-side eval-call cap, **default 100**) and, for in-process
    backends, `max_token_cost` (USD cap on proposer-LLM spend). This Codex adapter rejects
-   `max_token_cost` for `autoresearch` and `meta_harness`; use `max_evals`, `stop_at_score`, a
-   host timeout, and an account spend limit. **Size `max_evals` for many proposal rounds, not one**
-   (see below) — this is the most common way agents misuse this API.
+   `max_token_cost` for `autoresearch` and `meta_harness`; use their bounded structural defaults,
+   `stop_at_score`, and an account spend limit. **Size `max_evals` for many proposal rounds, not
+   one** (see below) — this is the most common way agents misuse this API.
+
+### Codex agentic defaults
+
+Always set the agentic engine values explicitly; these are skill defaults, not upstream GEPA
+defaults:
+
+```python
+agentic_config = OptimizeAnythingConfig(
+    engine=engine,
+    max_evals=10,
+    stop_at_score=None,  # replace with the known metric ceiling when one exists
+    sandbox=True,
+    engine_config=(
+        {"max_iterations": 3, "max_candidates_per_iter": 3}
+        if engine == "meta_harness"
+        else {}
+    ),
+)
+```
+
+The adapter separately allows four total Codex starts, leaving room for one known-pre-submission
+retry. For a composed run, use `optimize_adaptive_sequential(..., patience=2)` so two
+non-improving slices rotate to a fresh engine. A single-engine run uses its hard iteration and eval
+caps instead; upstream does not expose a per-engine plateau stopper.
 
 ## Sizing the valset and the budget (read this — the #1 mistake)
 `max_evals` is the *main* control over how long the optimizer runs. Leave it at the default (100)
@@ -167,8 +191,8 @@ low** — raise it and rerun.
 - **`max_token_cost`** — a hard USD cap for supported in-process backends. Do not set it for this
   adapter's `autoresearch` or `meta_harness` path: the compatibility command fails closed because
   Codex cannot enforce GEPA's `--max-budget-usd` contract.
-- **a wall-clock `timeout`** on the process you launch (e.g. `timeout 1200 python run.py`) as a
-  backstop.
+- **an optional wall-clock `timeout`** only when you need an emergency operational stop; do not use
+  elapsed time as the default Codex work budget.
 - If you **opt in** to evaluation caching (`engine_config={"engine": {"cache_evaluation": True}}` on
   the gepa backend — it is **off by default**), be aware `max_evals` then counts only cache *misses*:
   a converged search can keep proposing cache-hitting candidates without consuming eval budget, so

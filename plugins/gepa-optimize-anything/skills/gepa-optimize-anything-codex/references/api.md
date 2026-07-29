@@ -163,6 +163,10 @@ unreachable over HTTP.
 
 Each iteration the proposer subprocess reads the frontier + history state files, writes
 `pending_eval.json` with 1+ candidates, and the engine benchmarks each through the eval server.
+For Codex-backed runs, this skill overrides the upstream operational defaults in the generated
+configuration: `max_evals=10`, `max_iterations=3`, and `max_candidates_per_iter=3`.
+The compatibility adapter independently permits four total starts per state directory, including
+one retry only when Codex is known not to have started.
 
 ### `best_of_n` (baseline) — `engine_config` → `BestOfNConfig`
 Deliberately naive: each sample is one independent LLM call — no feedback, no history, no
@@ -211,6 +215,10 @@ redistributed.
   pool set by its `max_evals` keyword (per-config `max_evals` is ignored; per-config
   `max_token_cost` still applies). Extra knobs: `min_evals_per_stage`, `improvement_epsilon`,
   `cycle`, `max_switches`.
+
+For Codex agentic compositions, use `patience=2`. Individual `autoresearch` and `meta_harness`
+runs do not expose a common plateau setting, so their iteration, invocation, and evaluation caps
+remain the stop boundary.
 
 ```python
 from gepa.optimize_anything import optimize_sequential, OptimizeAnythingConfig

@@ -69,6 +69,12 @@ def test_state_dir_check_requires_a_writable_directory(tmp_path):
     assert preflight._state_dir_writable(str(tmp_path / "state"))
 
 
+def test_preflight_uses_bounded_default_invocation_cap(monkeypatch):
+    monkeypatch.delenv("CODEX_ADAPTER_MAX_INVOCATIONS", raising=False)
+
+    assert preflight._max_adapter_invocations() == 4
+
+
 def test_codex_exec_surface_requires_every_adapter_flag(monkeypatch):
     output = " ".join(sorted(preflight.REQUIRED_CODEX_EXEC_FLAGS))
     monkeypatch.setattr(

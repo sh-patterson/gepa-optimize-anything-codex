@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import json
 import os
 import signal
@@ -23,8 +24,10 @@ SCRIPTS = (
 sys.path.insert(0, str(SCRIPTS))
 
 from codex_claude_adapter import (  # noqa: E402
+    DEFAULT_MAX_ADAPTER_INVOCATIONS,
     _codex_command,
     _load_session_thread,
+    _max_adapter_invocations,
     _save_session_thread,
     invoke_codex,
     estimated_luna_cost,
@@ -457,6 +460,73 @@ def test_invocation_cap_rejects_second_attempt_before_codex(tmp_path, monkeypatc
 
     assert calls == 1
     assert len(list((state_dir / "invocation-slots").iterdir())) == 1
+
+
+def test_invocation_cap_defaults_to_four_total_attempts(tmp_path, monkeypatch):
+    state_dir = tmp_path / "adapter-state"
+    calls = 0
+
+    def run_codex(*_args):
+        nonlocal calls
+        calls += 1
+        return subprocess.CompletedProcess([], 7, "", "failed")
+
+    monkeypatch.setenv("CODEX_CLI", "codex")
+    monkeypatch.setenv("CODEX_ADAPTER_STATE_DIR", str(state_dir))
+    monkeypatch.delenv("CODEX_ADAPTER_MAX_INVOCATIONS", raising=False)
+    monkeypatch.setattr("codex_claude_adapter._run_codex", run_codex)
+    request = parse_agent_request(
+        ["--print", "--session-id", "upstream-1", "prompt"], tmp_path
+    )
+
+    assert _max_adapter_invocations() == DEFAULT_MAX_ADAPTER_INVOCATIONS == 4
+    for _ in range(DEFAULT_MAX_ADAPTER_INVOCATIONS):
+        assert invoke_codex(request).returncode == 7
+    with pytest.raises(RuntimeError, match="invocation cap exhausted"):
+        invoke_codex(request)
+
+    assert calls == DEFAULT_MAX_ADAPTER_INVOCATIONS
+
+
+def test_retry_once_when_codex_cannot_be_started(tmp_path, monkeypatch):
+    state_dir = tmp_path / "adapter-state"
+    calls = 0
+
+    def run_codex(*_args):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise BlockingIOError(errno.EAGAIN, "temporarily unable to start Codex")
+        return subprocess.CompletedProcess(
+            [],
+            0,
+            '{"type":"thread.started","thread_id":"codex-thread-1"}\n'
+            '{"type":"item.completed","item":{"type":"agent_message","text":"done"}}\n'
+            '{"type":"turn.completed","usage":{"input_tokens":10,"output_tokens":2}}\n',
+            "",
+        )
+
+    monkeypatch.setenv("CODEX_CLI", "codex")
+    monkeypatch.setenv("CODEX_ADAPTER_STATE_DIR", str(state_dir))
+    monkeypatch.delenv("CODEX_ADAPTER_MAX_INVOCATIONS", raising=False)
+    monkeypatch.setattr("codex_claude_adapter._run_codex", run_codex)
+    request = parse_agent_request(
+        ["--print", "--session-id", "upstream-1", "prompt"], tmp_path
+    )
+
+    run = invoke_codex(request)
+
+    assert run.returncode == 0
+    assert calls == 2
+    assert len(list((state_dir / "invocation-slots").iterdir())) == 2
+    records = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in (state_dir / "invocations").glob("*.json")
+    ]
+    assert sorted(record["terminal_status"] for record in records) == [
+        "completed",
+        "failed",
+    ]
 
 
 def test_invocation_cap_allows_one_concurrent_attempt(tmp_path, monkeypatch):

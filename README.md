@@ -48,11 +48,25 @@ agentic engine. Codex uses writable homes beneath `~/.cache`.
 
 Do not set `max_token_cost` for `autoresearch` or `meta_harness`. GEPA sends it
 to the compatibility command as `--max-budget-usd`; the adapter rejects that
-flag before spawning Codex because it cannot enforce a USD ceiling. Use
-`max_evals`, `stop_at_score`, and a host-level timeout. Set an external spend
-limit in the OpenAI account before a paid run. That account-level control does
-not satisfy GEPA's per-invocation hard-budget contract. The `v1.0.0`
-hard-budget gate remains [externally blocked](HARD_BUDGET.md).
+flag before spawning Codex because it cannot enforce a USD ceiling.
+
+Codex agentic runs use a bounded structural default instead:
+
+- at most four adapter starts in one state directory;
+- one automatic retry only when Codex is known not to have started;
+- `max_evals=10` for either agentic engine;
+- for `meta_harness`, `max_iterations=3` and
+  `max_candidates_per_iter=3`.
+
+The retry consumes one of the four starts. Ambiguous, usage-bearing, and
+completed calls are never retried. Set `CODEX_ADAPTER_MAX_INVOCATIONS` to a
+different positive integer to override the adapter ceiling. Set
+`stop_at_score` whenever the metric has a known ceiling. A host timeout remains
+an optional emergency stop, not a default run budget.
+
+Set an external spend limit in the OpenAI account before a paid run. These
+controls bound work but do not satisfy GEPA's per-invocation hard-USD contract.
+The `v1.0.0` hard-budget gate remains [externally blocked](HARD_BUDGET.md).
 
 The adapter accepts pinned GEPA's exact
 `--disallowedTools=WebFetch,WebSearch`, `--output-format json`, and
@@ -96,8 +110,9 @@ Do not set `max_token_cost`. For release dogfood, use a dedicated project hard
 limit and inspect each durable runner receipt before starting the next engine.
 A submitted call and its accounting can arrive after that check. This is an
 operational backstop, not per-invocation USD enforcement. Outside the release
-runner, set `CODEX_ADAPTER_MAX_INVOCATIONS` to a positive integer to apply the
-same fail-closed request-count guard to a unique adapter state directory.
+runner, the adapter defaults to four starts per unique state directory. Set
+`CODEX_ADAPTER_MAX_INVOCATIONS` to a positive integer to override that
+fail-closed request-count guard.
 
 ## Scope
 

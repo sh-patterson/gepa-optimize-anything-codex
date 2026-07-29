@@ -66,3 +66,15 @@ def test_package_and_plugin_versions_match():
     assert pyproject["project"]["version"] == "0.3.0"
     assert manifest["version"] == pyproject["project"]["version"]
     assert pyproject["tool"]["setuptools"]["packages"] == []
+
+
+def test_codex_agentic_defaults_are_documented_consistently():
+    skill = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+    api = (SKILL / "references" / "api.md").read_text(encoding="utf-8")
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+    for document in (skill, api, readme):
+        assert "max_evals=10" in document
+        assert "max_iterations=3" in document
+        assert "max_candidates_per_iter=3" in document
+        assert "four" in document.lower()

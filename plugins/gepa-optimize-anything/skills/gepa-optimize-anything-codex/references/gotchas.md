@@ -62,8 +62,11 @@ work:
   times out, still spending proposer-LLM tokens. With caching on, `stop_at_score` and/or a compatible
   cost or wall-clock bound are mandatory.
 This Codex adapter rejects agentic `max_token_cost` because it cannot enforce GEPA's
-`--max-budget-usd` contract. Use `max_evals`, `stop_at_score`, a host timeout, and an account spend
-limit.
+`--max-budget-usd` contract. For Codex agentic runs, explicitly use `max_evals=10`; for
+`meta_harness`, also use `max_iterations=3` and `max_candidates_per_iter=3`. The adapter permits
+four total starts by default and retries once only when Codex is known not to have started. The
+retry consumes a start; ambiguous or usage-bearing calls are never retried. Use an account spend
+limit as a secondary backstop. A host timeout is optional rather than the default work budget.
 
 ## 8. Pick the right mode
 The mode is implicit in which sets you pass (`api.md`): no `dataset`/`valset` → single-task;
@@ -111,3 +114,5 @@ your evaluator stops the whole optimization. Either catch failures yourself and 
 - [ ] `test_set` passed if you need an unbiased number to report
 - [ ] for agentic backends: Codex adapter `claude` on PATH + Codex auth, `jq` installed, and
       a passing Bubblewrap preflight with `CODEX_API_KEY`
+- [ ] for Codex agentic backends: `max_evals=10`; for `meta_harness`, `max_iterations=3` and
+      `max_candidates_per_iter=3`; unique adapter state so the default four-start cap is meaningful
