@@ -22,6 +22,7 @@ SEED_CANDIDATE = "Return RED."
 TARGET_CANDIDATE = "Return BLUE."
 TARGET_MODEL = "gpt-5.6-luna"
 REASONING_EFFORT = "high"
+MAX_ADAPTER_INVOCATIONS = 1
 REQUIRED_INVOCATION_FIELDS = frozenset(
     {
         "schema_version",
@@ -75,6 +76,7 @@ def release_policy(engine: str) -> dict[str, Any]:
         "max_evals": 3,
         "stop_at_score": 1.0,
         "host_timeout_seconds": HOST_TIMEOUT_SECONDS,
+        "max_adapter_invocations": MAX_ADAPTER_INVOCATIONS,
         "retry_count": 0,
         "proposer_iterations": 1,
     }
@@ -386,6 +388,7 @@ def stage_and_preflight(
             (probe.stderr or probe.stdout or "sandbox probe failed").strip()
         )
     environment = runtime.runtime_environment(paths)
+    environment["CODEX_ADAPTER_MAX_INVOCATIONS"] = str(MAX_ADAPTER_INVOCATIONS)
     preflight = subprocess.run(
         [sys.executable, str(skill / "scripts" / "preflight.py"), "--engine", engine],
         env=environment,

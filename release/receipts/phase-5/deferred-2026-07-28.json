@@ -10,6 +10,7 @@
     "proposer_iterations": 1,
     "max_evals": 3,
     "timeout_seconds": 600,
+    "max_adapter_invocations": 1,
     "retries": 0,
     "engine_execution": "serial"
   }

@@ -29,7 +29,8 @@ when Codex exposes both guarantees.
 The installed Luna-high dogfood was deferred without making a paid call. The
 beta relies on free Bubblewrap integration and clean-install proof. Its release
 runner limits each engine to one proposer iteration, three evaluations, a
-600-second deadline, and zero retries. Engines must run serially.
+600-second deadline, one adapter invocation, and zero retries. Engines must run
+serially.
 
 These controls bound work and duration; they do not enforce a USD ceiling.
 Installed live dogfood remains an explicit release limitation until a

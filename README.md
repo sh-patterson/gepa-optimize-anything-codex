@@ -51,8 +51,8 @@ to the compatibility command as `--max-budget-usd`; the adapter rejects that
 flag before spawning Codex because it cannot enforce a USD ceiling. Use
 `max_evals`, `stop_at_score`, and a host-level timeout. Set an external spend
 limit in the OpenAI account before a paid run. That account-level control does
-not satisfy GEPA's per-invocation hard-budget contract. The release gate remains
-[externally blocked](HARD_BUDGET.md).
+not satisfy GEPA's per-invocation hard-budget contract. The `v1.0.0`
+hard-budget gate remains [externally blocked](HARD_BUDGET.md).
 
 The adapter accepts pinned GEPA's exact
 `--disallowedTools=WebFetch,WebSearch`, `--output-format json`, and
@@ -76,8 +76,8 @@ RUN_CODEX_AGENT_SMOKE=1 python -m pytest -q \
 ```
 
 The release dogfood runner makes paid calls. It runs one bounded engine, writes
-a durable receipt, and exits nonzero when its evidence is incomplete. Run each
-engine separately:
+a durable receipt, caps the adapter at one invocation, and exits nonzero when
+its evidence is incomplete. Run each engine separately:
 
 ```bash
 RUN_CODEX_AGENT_SMOKE=1 python scripts/release_dogfood.py --engine autoresearch
@@ -95,7 +95,9 @@ RUN_CODEX_AGENT_SMOKE=1 python -m pytest -q tests/test_live_optimize_anything.py
 Do not set `max_token_cost`. For release dogfood, use a dedicated project hard
 limit and inspect each durable runner receipt before starting the next engine.
 A submitted call and its accounting can arrive after that check. This is an
-operational backstop, not per-invocation USD enforcement.
+operational backstop, not per-invocation USD enforcement. Outside the release
+runner, set `CODEX_ADAPTER_MAX_INVOCATIONS` to a positive integer to apply the
+same fail-closed request-count guard to a unique adapter state directory.
 
 ## Scope
 

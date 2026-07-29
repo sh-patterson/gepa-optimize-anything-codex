@@ -57,6 +57,8 @@ def test_release_policy_is_fixed_for_each_agentic_engine(tmp_path: Path) -> None
     assert autoresearch["engine_config"]["ralph"] is False
     assert meta_harness["engine_config"]["max_iterations"] == 1
     assert meta_harness["engine_config"]["max_candidates_per_iter"] == 1
+    assert release_dogfood.release_policy("autoresearch")["max_adapter_invocations"] == 1
+    assert release_dogfood.release_policy("meta_harness")["max_adapter_invocations"] == 1
 
 
 def test_receipt_aggregates_journal_usage_and_persists_manifest(tmp_path: Path) -> None:
@@ -283,6 +285,7 @@ def test_stage_and_preflight_records_actual_staged_paths(
     )
 
     assert environment["CODEX_ADAPTER_STATE_DIR"] == str(Paths.state_dir)
+    assert environment["CODEX_ADAPTER_MAX_INVOCATIONS"] == "1"
     assert evidence["launcher"] == str(launcher)
     assert evidence["probe_success"] is True
 

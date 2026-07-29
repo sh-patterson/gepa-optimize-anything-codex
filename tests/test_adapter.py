@@ -434,6 +434,93 @@ def _invocation_record(state_dir: Path) -> dict[str, object]:
     return json.loads(records[0].read_text(encoding="utf-8"))
 
 
+def test_invocation_cap_rejects_second_attempt_before_codex(tmp_path, monkeypatch):
+    state_dir = tmp_path / "adapter-state"
+    calls = 0
+
+    def run_codex(*_args):
+        nonlocal calls
+        calls += 1
+        return subprocess.CompletedProcess([], 7, "", "failed")
+
+    monkeypatch.setenv("CODEX_CLI", "codex")
+    monkeypatch.setenv("CODEX_ADAPTER_STATE_DIR", str(state_dir))
+    monkeypatch.setenv("CODEX_ADAPTER_MAX_INVOCATIONS", "1")
+    monkeypatch.setattr("codex_claude_adapter._run_codex", run_codex)
+    request = parse_agent_request(
+        ["--print", "--session-id", "upstream-1", "prompt"], tmp_path
+    )
+
+    assert invoke_codex(request).returncode == 7
+    with pytest.raises(RuntimeError, match="invocation cap exhausted"):
+        invoke_codex(request)
+
+    assert calls == 1
+    assert len(list((state_dir / "invocation-slots").iterdir())) == 1
+
+
+def test_invocation_cap_allows_one_concurrent_attempt(tmp_path, monkeypatch):
+    state_dir = tmp_path / "adapter-state"
+    barrier = threading.Barrier(2)
+    calls = 0
+    failures: list[BaseException] = []
+
+    def run_codex(*_args):
+        nonlocal calls
+        calls += 1
+        return subprocess.CompletedProcess([], 7, "", "failed")
+
+    def invoke() -> None:
+        barrier.wait()
+        try:
+            invoke_codex(request)
+        except RuntimeError as exc:
+            failures.append(exc)
+
+    monkeypatch.setenv("CODEX_CLI", "codex")
+    monkeypatch.setenv("CODEX_ADAPTER_STATE_DIR", str(state_dir))
+    monkeypatch.setenv("CODEX_ADAPTER_MAX_INVOCATIONS", "1")
+    monkeypatch.setattr("codex_claude_adapter._run_codex", run_codex)
+    request = parse_agent_request(
+        ["--print", "--session-id", "upstream-1", "prompt"], tmp_path
+    )
+    first = threading.Thread(target=invoke)
+    second = threading.Thread(target=invoke)
+
+    first.start()
+    second.start()
+    first.join()
+    second.join()
+
+    assert calls == 1
+    assert len(failures) == 1
+    assert "invocation cap exhausted" in str(failures[0])
+
+
+@pytest.mark.parametrize("value", ["", "0", "-1", "one", "1.0"])
+def test_invalid_invocation_cap_rejects_before_codex(tmp_path, monkeypatch, value):
+    state_dir = tmp_path / "adapter-state"
+    calls = 0
+
+    def run_codex(*_args):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("invalid cap reached Codex")
+
+    monkeypatch.setenv("CODEX_CLI", "codex")
+    monkeypatch.setenv("CODEX_ADAPTER_STATE_DIR", str(state_dir))
+    monkeypatch.setenv("CODEX_ADAPTER_MAX_INVOCATIONS", value)
+    monkeypatch.setattr("codex_claude_adapter._run_codex", run_codex)
+    request = parse_agent_request(
+        ["--print", "--session-id", "upstream-1", "prompt"], tmp_path
+    )
+
+    with pytest.raises(RuntimeError, match="positive integer"):
+        invoke_codex(request)
+
+    assert calls == 0
+
+
 def test_completed_invocation_writes_metadata_only_journal(tmp_path, monkeypatch):
     state_dir = tmp_path / "adapter-state"
     monkeypatch.setenv("CODEX_CLI", "codex")

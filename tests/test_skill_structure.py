@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -54,3 +55,13 @@ def test_marketplace_points_to_the_skills_only_plugin():
     assert "mcpServers" not in manifest
     assert "apps" not in manifest
     assert not (ROOT / ".agents" / "skills").exists()
+
+
+def test_package_and_plugin_versions_match():
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    manifest = json.loads(
+        (PLUGIN / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8")
+    )
+
+    assert pyproject["project"]["version"] == "0.3.0"
+    assert manifest["version"] == pyproject["project"]["version"]

@@ -248,6 +248,35 @@ def _state_dir() -> Path:
     return state_dir
 
 
+def _max_adapter_invocations() -> int | None:
+    raw_limit = os.environ.get("CODEX_ADAPTER_MAX_INVOCATIONS")
+    if raw_limit is None:
+        return None
+    if not raw_limit.isascii() or not raw_limit.isdecimal() or int(raw_limit) < 1:
+        raise RuntimeError("CODEX_ADAPTER_MAX_INVOCATIONS must be a positive integer")
+    return int(raw_limit)
+
+
+def _claim_invocation_slot(state_dir: Path) -> None:
+    limit = _max_adapter_invocations()
+    if limit is None:
+        return
+    slots_dir = state_dir / "invocation-slots"
+    slots_dir.mkdir(parents=True, exist_ok=True)
+    for number in range(1, limit + 1):
+        path = slots_dir / str(number)
+        try:
+            descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            continue
+        except OSError as exc:
+            raise RuntimeError("unable to claim Codex adapter invocation slot") from exc
+        with os.fdopen(descriptor, "w", encoding="utf-8"):
+            pass
+        return
+    raise RuntimeError("CODEX_ADAPTER_MAX_INVOCATIONS invocation cap exhausted")
+
+
 def _session_record_path(state_dir: Path, upstream_session_id: str) -> Path:
     digest = sha256(upstream_session_id.encode("utf-8")).hexdigest()
     return state_dir / "sessions" / f"{digest}.json"
@@ -452,6 +481,7 @@ def invoke_codex(request: AgentRequest) -> CodexRun:
         api_key = os.environ.get("CODEX_API_KEY") or os.environ.get("OPENAI_API_KEY")
         if api_key:
             child_env["CODEX_API_KEY"] = api_key
+        _claim_invocation_slot(state_dir)
         proc = _run_codex(command, request.cwd, child_env)
         terminal = parse_codex_output(proc.stdout)
         duration_ms = round((time.monotonic() - started) * 1000)
