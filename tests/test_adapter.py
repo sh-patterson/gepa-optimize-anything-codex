@@ -340,6 +340,9 @@ def test_max_budget_is_rejected_before_codex_spawn(tmp_path, monkeypatch):
         invoke_codex(request)
 
     assert not marker.exists()
+    record = _invocation_record(tmp_path / "adapter-state")
+    assert record["return_code"] == 2
+    assert record["terminal_status"] == "failed"
 
 
 def test_zero_exit_without_turn_completed_fails_closed(tmp_path, monkeypatch):
@@ -423,6 +426,115 @@ def test_error_receipt_preserves_observed_usage_and_cost(tmp_path, monkeypatch):
     assert payload["usage"]["input_tokens"] == 1000
     assert payload["total_cost_usd"] == pytest.approx(0.001735)
     assert payload["adapter_cost_status"].startswith("standard_tier")
+
+
+def _invocation_record(state_dir: Path) -> dict[str, object]:
+    records = list((state_dir / "invocations").glob("*.json"))
+    assert len(records) == 1
+    return json.loads(records[0].read_text(encoding="utf-8"))
+
+
+def test_completed_invocation_writes_metadata_only_journal(tmp_path, monkeypatch):
+    state_dir = tmp_path / "adapter-state"
+    monkeypatch.setenv("CODEX_CLI", "codex")
+    monkeypatch.setenv("CODEX_ADAPTER_STATE_DIR", str(state_dir))
+    monkeypatch.setenv("OPENAI_API_KEY", "journal-secret")
+    monkeypatch.setattr(
+        "codex_claude_adapter._run_codex",
+        lambda *_args: subprocess.CompletedProcess(
+            [],
+            0,
+            '{"type":"thread.started","thread_id":"codex-thread-1"}\n'
+            '{"type":"item.completed","item":{"type":"agent_message","text":"private response"}}\n'
+            '{"type":"turn.completed","usage":{"input_tokens":1000,"output_tokens":100}}\n',
+            "",
+        ),
+    )
+    request = parse_agent_request(
+        ["--print", "--session-id", "upstream-1", "private prompt"], tmp_path
+    )
+
+    run = invoke_codex(request)
+    record = _invocation_record(state_dir)
+    record_text = json.dumps(record, sort_keys=True)
+
+    assert run.returncode == 0
+    assert record == {
+        "schema_version": 1,
+        "upstream_session_id": "upstream-1",
+        "codex_thread_id": "codex-thread-1",
+        "resume": False,
+        "source_model": "claude-sonnet-4-6",
+        "target_model": "gpt-5.6-luna",
+        "reasoning_effort": "high",
+        "return_code": 0,
+        "terminal_status": "completed",
+        "usage": {"input_tokens": 1000, "output_tokens": 100},
+        "estimated_cost_usd": pytest.approx(0.00185),
+        "cost_status": "standard_tier_upper_estimate_from_observed_usage",
+        "duration_ms": record["duration_ms"],
+    }
+    assert isinstance(record["duration_ms"], int)
+    assert "private prompt" not in record_text
+    assert "private response" not in record_text
+    assert "journal-secret" not in record_text
+
+
+def test_nonzero_exit_writes_failed_invocation_journal(tmp_path, monkeypatch):
+    state_dir = tmp_path / "adapter-state"
+    monkeypatch.setenv("CODEX_CLI", "codex")
+    monkeypatch.setenv("CODEX_ADAPTER_STATE_DIR", str(state_dir))
+    monkeypatch.setattr(
+        "codex_claude_adapter._run_codex",
+        lambda *_args: subprocess.CompletedProcess(
+            [],
+            7,
+            '{"type":"thread.started","thread_id":"codex-thread-1"}\n'
+            '{"type":"turn.failed","error":{"message":"private failure"}}\n',
+            "",
+        ),
+    )
+    request = parse_agent_request(
+        ["--print", "--session-id", "upstream-1", "prompt"], tmp_path
+    )
+
+    run = invoke_codex(request)
+    record = _invocation_record(state_dir)
+
+    assert run.returncode == 7
+    assert record["return_code"] == 7
+    assert record["terminal_status"] == "failed"
+    assert record["usage"] == {}
+
+
+def test_conflicting_terminal_output_writes_ambiguous_invocation_journal(
+    tmp_path, monkeypatch
+):
+    state_dir = tmp_path / "adapter-state"
+    monkeypatch.setenv("CODEX_CLI", "codex")
+    monkeypatch.setenv("CODEX_ADAPTER_STATE_DIR", str(state_dir))
+    monkeypatch.setattr(
+        "codex_claude_adapter._run_codex",
+        lambda *_args: subprocess.CompletedProcess(
+            [],
+            0,
+            '{"type":"thread.started","thread_id":"codex-thread-1"}\n'
+            '{"type":"item.completed","item":{"type":"agent_message","text":"finished"}}\n'
+            '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}\n'
+            '{"type":"error","error":{"message":"late failure"}}\n',
+            "",
+        ),
+    )
+    request = parse_agent_request(
+        ["--print", "--session-id", "upstream-1", "prompt"], tmp_path
+    )
+
+    run = invoke_codex(request)
+    record = _invocation_record(state_dir)
+
+    assert run.returncode == 1
+    assert record["return_code"] == 1
+    assert record["terminal_status"] == "ambiguous"
 
 
 def test_atomic_per_session_records_do_not_share_concurrent_writes(tmp_path):

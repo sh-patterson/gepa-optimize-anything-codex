@@ -88,3 +88,32 @@ def test_upstream_copy_has_no_known_truncations() -> None:
     )
     found = sorted(fragment.strip() for fragment in KNOWN_TRUNCATIONS if fragment in copied_text)
     assert found == []
+
+
+def test_adapter_invocation_journal_stays_metadata_only() -> None:
+    adapter = (SKILL / "scripts" / "codex_claude_adapter.py").read_text(
+        encoding="utf-8"
+    )
+    start = adapter.index("def _save_invocation_record")
+    end = adapter.index("\ndef _codex_command", start)
+    journal = adapter[start:end]
+
+    assert 'state_dir / "invocations" / f"{uuid4()}.json"' in journal
+    for field in (
+        "schema_version",
+        "upstream_session_id",
+        "codex_thread_id",
+        "resume",
+        "source_model",
+        "target_model",
+        "reasoning_effort",
+        "return_code",
+        "terminal_status",
+        "usage",
+        "estimated_cost_usd",
+        "cost_status",
+        "duration_ms",
+    ):
+        assert f'"{field}":' in journal
+    for forbidden in ("request.prompt", "run.final_message", "run.stderr", "API_KEY"):
+        assert forbidden not in journal

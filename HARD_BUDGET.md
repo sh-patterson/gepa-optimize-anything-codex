@@ -17,8 +17,12 @@ not bind one invocation. The organization Cost API requires an admin key and
 returns costs in daily buckets, so it is not a terminal per-invocation receipt.
 
 The adapter therefore continues to reject `--max-budget-usd` before spawning
-Codex. A paid termination probe would be unbounded by the requested contract and
-must not run. Revisit this decision only when Codex exposes both guarantees.
+Codex. A release runner may apply a project hard limit from durable receipts as
+an operational backstop before it starts a later invocation. That control can
+lag a submitted call and its accounting, so it does not satisfy GEPA's
+per-invocation hard-budget contract. A paid termination probe would still be
+unbounded by the requested contract and must not run. Revisit this decision only
+when Codex exposes both guarantees.
 
 Evidence:
 

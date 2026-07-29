@@ -68,19 +68,34 @@ access.
 python -m pytest -q
 ```
 
-Run the direct live smoke only when you intend to make one Codex model call:
+Run the direct adapter smoke only when you intend to make one Codex model call:
 
 ```bash
 RUN_CODEX_AGENT_SMOKE=1 python -m pytest -q \
   tests/test_adapter.py::test_live_codex_round_trip
 ```
 
-The GEPA live smoke is separate and may invoke the agent more than once:
+The release dogfood runner makes paid calls. It runs one bounded engine, writes
+a durable receipt, and exits nonzero when its evidence is incomplete. Run each
+engine separately:
 
 ```bash
-RUN_CODEX_AGENT_SMOKE=1 python -m pytest -q \
-  tests/test_live_optimize_anything.py::test_autoresearch_improves_a_deterministic_text_candidate
+RUN_CODEX_AGENT_SMOKE=1 python scripts/release_dogfood.py --engine autoresearch
+RUN_CODEX_AGENT_SMOKE=1 python scripts/release_dogfood.py --engine meta_harness
 ```
+
+The matching pytest cases are also opt-in. They verify Luna with high reasoning,
+the Bubblewrap sandbox, a deterministic `RED` to `BLUE` result, positive usage
+and estimate, cost agreement, session mapping, and the persisted receipt:
+
+```bash
+RUN_CODEX_AGENT_SMOKE=1 python -m pytest -q tests/test_live_optimize_anything.py
+```
+
+Do not set `max_token_cost`. For release dogfood, use a dedicated project hard
+limit and inspect each durable runner receipt before starting the next engine.
+A submitted call and its accounting can arrive after that check. This is an
+operational backstop, not per-invocation USD enforcement.
 
 ## Scope
 
