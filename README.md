@@ -22,8 +22,8 @@ codex plugin add gepa-optimize-anything@gepa-optimize-anything-codex
 ```
 
 Start a new Codex task after installation. Invoke
-`$gepa-optimize-anything-codex` with the artifact and evaluator you want to
-improve.
+`$gepa-optimize-anything:gepa-optimize-anything-codex` with the artifact and
+evaluator you want to improve.
 
 When invoked, the skill directs Codex to install pinned GEPA when needed and
 launch it with the bundled adapter first on `PATH`. This plugin targets Codex
@@ -142,6 +142,19 @@ Their standalone commands are:
 RUN_CODEX_LIVE=1 python scripts/release_inprocess_smoke.py --engine gepa --output-dir /tmp/gepa-smoke
 RUN_CODEX_LIVE=1 python scripts/release_inprocess_smoke.py --engine best_of_n --output-dir /tmp/best-of-n-smoke
 ```
+
+The pre-v1 installed-skill dogfood exercises the user-facing skill invocation
+with a deterministic eight-case JSON routing policy and one bounded
+MetaHarness iteration:
+
+```bash
+RUN_CODEX_LIVE=1 python scripts/installed_skill_dogfood.py \
+  --output-dir /tmp/installed-skill-dogfood
+```
+
+It requires the same installed `GEPA_CODEX_SKILL_DIR` and staged ChatGPT login.
+Its receipt stores score traces, candidate hashes, usage, session mappings, and
+custody hashes, but no prompts, responses, candidate text, or credentials.
 
 Do not set `max_token_cost`. Inspect each durable runner receipt before
 starting the next engine. Outside the release runner, the adapter defaults to
