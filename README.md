@@ -67,7 +67,9 @@ The adapter alone enforces a default of four atomic starts per state directory.
 It retries once only when Codex is known not to have started. The retry consumes
 one of the four starts. Ambiguous, usage-bearing, and completed calls are never
 retried. Set `CODEX_ADAPTER_MAX_INVOCATIONS` to a different positive integer to
-override the adapter ceiling. Set
+override the adapter ceiling. Set `CODEX_ADAPTER_PRE_SUBMISSION_RETRIES=0` for
+a zero-retry evidence run; the production default remains one known-not-started
+retry. Set
 `stop_at_score` whenever the metric has a known ceiling. A host timeout remains
 an optional emergency stop, not a default run budget.
 
@@ -101,17 +103,21 @@ python -m pytest -q
 Run the direct adapter smoke only when you intend to make one Codex model call:
 
 ```bash
-RUN_CODEX_AGENT_SMOKE=1 python -m pytest -q \
+RUN_CODEX_LIVE=1 python -m pytest -q \
   tests/test_adapter.py::test_live_codex_round_trip
 ```
 
-The release dogfood runner makes paid calls. It runs one bounded engine, writes
-a durable receipt, caps the adapter at one invocation, and exits nonzero when
-its evidence is incomplete. Run each engine separately:
+The release dogfood runner makes live calls from an installed plugin. Set
+`GEPA_CODEX_SKILL_DIR` to that installed skill; the runner rejects the source
+checkout, marketplace source copy, version mismatch, reused state, and missing
+plugin manifest. For the v0.3.1 proof, first stage a ChatGPT login with
+`sandbox_runtime.py login` and leave `CODEX_API_KEY` and `OPENAI_API_KEY`
+unset. The runner caps the adapter at one invocation and exits nonzero when its
+evidence is incomplete. Run each engine separately:
 
 ```bash
-RUN_CODEX_AGENT_SMOKE=1 python scripts/release_dogfood.py --engine autoresearch
-RUN_CODEX_AGENT_SMOKE=1 python scripts/release_dogfood.py --engine meta_harness
+RUN_CODEX_LIVE=1 python scripts/release_dogfood.py --engine autoresearch
+RUN_CODEX_LIVE=1 python scripts/release_dogfood.py --engine meta_harness
 ```
 
 The matching pytest cases are also opt-in. They verify Luna with high reasoning,
@@ -119,7 +125,18 @@ the Bubblewrap sandbox, a deterministic `RED` to `BLUE` result, positive usage
 and estimate, cost agreement, session mapping, and the persisted receipt:
 
 ```bash
-RUN_CODEX_AGENT_SMOKE=1 python -m pytest -q tests/test_live_optimize_anything.py
+RUN_CODEX_LIVE=1 python -m pytest -q tests/test_live_optimize_anything.py
+```
+
+The same live test file runs installed-plugin smokes for the in-process `gepa`
+and `best_of_n` engines through the installed `CodexLM` driver. All four release
+smokes therefore use staged ChatGPT login, `gpt-5.6-luna` with high reasoning,
+the adapter invocation journal, and the same token-derived usage estimate.
+Neither API-key variable may be present. Their standalone commands are:
+
+```bash
+RUN_CODEX_LIVE=1 python scripts/release_inprocess_smoke.py --engine gepa --output-dir /tmp/gepa-smoke
+RUN_CODEX_LIVE=1 python scripts/release_inprocess_smoke.py --engine best_of_n --output-dir /tmp/best-of-n-smoke
 ```
 
 Do not set `max_token_cost`. For release dogfood, use a dedicated project hard

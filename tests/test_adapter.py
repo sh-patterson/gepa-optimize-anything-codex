@@ -28,6 +28,7 @@ from codex_claude_adapter import (  # noqa: E402
     _codex_command,
     _load_session_thread,
     _max_adapter_invocations,
+    _pre_submission_retries,
     _save_session_thread,
     invoke_codex,
     estimated_luna_cost,
@@ -337,6 +338,28 @@ def test_codex_child_uses_only_the_explicit_codex_api_key(tmp_path, monkeypatch)
     assert "OPENAI_API_KEY" not in captured
 
 
+def test_staged_login_proof_rejects_keys_before_codex_starts(tmp_path, monkeypatch):
+    started = False
+
+    def run_codex(_command, _cwd, _environment):
+        nonlocal started
+        started = True
+
+    monkeypatch.setenv("CODEX_CLI", "codex")
+    monkeypatch.setenv("CODEX_ADAPTER_STATE_DIR", str(tmp_path / "adapter-state"))
+    monkeypatch.setenv("CODEX_ADAPTER_AUTH_MODE", "chatgpt_login")
+    monkeypatch.setenv("OPENAI_API_KEY", "must-not-reach-codex")
+    monkeypatch.setattr("codex_claude_adapter._run_codex", run_codex)
+    request = parse_agent_request(
+        ["--print", "--session-id", "upstream-1", "prompt"], tmp_path
+    )
+
+    with pytest.raises(RuntimeError, match="cannot expose API keys"):
+        invoke_codex(request)
+
+    assert started is False
+
+
 def test_cost_estimate_includes_cache_write_and_long_context_rates():
     ordinary = estimated_luna_cost(
         {"input_tokens": 1000, "cached_input_tokens": 100, "output_tokens": 100}
@@ -560,6 +583,28 @@ def test_retry_once_when_codex_cannot_be_started(tmp_path, monkeypatch):
         "completed",
         "failed",
     ]
+
+
+def test_release_policy_can_disable_pre_submission_retry(tmp_path, monkeypatch):
+    calls = 0
+
+    def run_codex(*_args):
+        nonlocal calls
+        calls += 1
+        raise BlockingIOError(errno.EAGAIN, "temporarily unable to start Codex")
+
+    monkeypatch.setenv("CODEX_CLI", "codex")
+    monkeypatch.setenv("CODEX_ADAPTER_STATE_DIR", str(tmp_path / "adapter-state"))
+    monkeypatch.setenv("CODEX_ADAPTER_PRE_SUBMISSION_RETRIES", "0")
+    monkeypatch.setattr("codex_claude_adapter._run_codex", run_codex)
+    request = parse_agent_request(
+        ["--print", "--session-id", "upstream-1", "prompt"], tmp_path
+    )
+
+    assert _pre_submission_retries() == 0
+    with pytest.raises(BlockingIOError):
+        invoke_codex(request)
+    assert calls == 1
 
 
 def test_invocation_cap_allows_one_concurrent_attempt(tmp_path, monkeypatch):
@@ -852,8 +897,8 @@ def test_claude_command_invokes_fake_codex_and_returns_json(tmp_path):
 
 @pytest.mark.live
 @pytest.mark.skipif(
-    os.environ.get("RUN_CODEX_AGENT_SMOKE") != "1",
-    reason="requires one paid Codex API call",
+    os.environ.get("RUN_CODEX_LIVE") != "1",
+    reason="requires one live Codex call",
 )
 def test_live_codex_round_trip(tmp_path):
     launcher = SCRIPTS / "claude"

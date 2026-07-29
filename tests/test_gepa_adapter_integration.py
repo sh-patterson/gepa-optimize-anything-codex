@@ -46,6 +46,67 @@ def _sandboxed_runtime(
     return state_dir
 
 
+@pytest.mark.parametrize("engine", ("autoresearch", "meta_harness"))
+@pytest.mark.skipif(
+    os.name != "posix" or not shutil.which("bwrap"),
+    reason="the sandboxed compatibility command requires Linux bubblewrap",
+)
+def test_agentic_max_token_cost_rejects_before_codex_starts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, engine: str
+) -> None:
+    pytest.importorskip("gepa")
+    from gepa.optimize_anything import OptimizeAnythingConfig, optimize_anything
+
+    fake_codex = tmp_path / "home" / ".local" / "bin" / "codex"
+    fake_codex.parent.mkdir(parents=True)
+    marker = tmp_path / "codex-started"
+    fake_codex.write_text(
+        "#!/usr/bin/env python3\n"
+        "from pathlib import Path\n"
+        f"Path({str(marker)!r}).write_text('started', encoding='utf-8')\n",
+        encoding="utf-8",
+    )
+    fake_codex.chmod(0o755)
+    _sandboxed_runtime(tmp_path, monkeypatch, fake_codex)
+
+    config = OptimizeAnythingConfig(
+        engine=engine,
+        max_evals=1,
+        max_token_cost=0.01,
+        sandbox=True,
+        run_dir=str(tmp_path / "run"),
+        output_dir=str(tmp_path / "output"),
+        engine_config=(
+            {"ralph": True}
+            if engine == "autoresearch"
+            else {"max_iterations": 1, "max_candidates_per_iter": 1}
+        ),
+    )
+    if engine == "autoresearch":
+        with pytest.raises(RuntimeError, match="max-budget-usd"):
+            optimize_anything(
+                seed_candidate="Return RED.",
+                evaluator=lambda candidate, _example=None: (
+                    0.0,
+                    {"feedback": candidate},
+                ),
+                objective="Write a candidate containing BLUE.",
+                config=config,
+            )
+    else:
+        result = optimize_anything(
+            seed_candidate="Return RED.",
+            evaluator=lambda candidate, _example=None: (
+                0.0,
+                {"feedback": candidate},
+            ),
+            objective="Write a candidate containing BLUE.",
+            config=config,
+        )
+        assert result.metadata["meta_harness"]["stop_reason"] == "proposer_failed"
+    assert not marker.exists()
+
+
 @pytest.mark.skipif(
     os.name != "posix" or not shutil.which("bwrap"),
     reason="the sandboxed compatibility command requires Linux bubblewrap",
@@ -122,11 +183,27 @@ print(json.dumps({
     assert "resume" not in invocations[0]
     assert invocations[1][0:2] == ["exec", "resume"]
     assert "codex-thread-1" in invocations[1]
+    assert all("--max-budget-usd" not in invocation for invocation in invocations)
     assert result.best_candidate == "Return BLUE."
     assert result.best_score == 1.0
     assert result.total_evals == 2
     assert result.metadata["adapter_cost"] > 0
     assert len(list((state_dir / "sessions").glob("*.json"))) == 1
+    invocation_records = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in (state_dir / "invocations").glob("*.json")
+    ]
+    assert len(invocation_records) == 2
+    assert {record["terminal_status"] for record in invocation_records} == {"completed"}
+    assert {record["resume"] for record in invocation_records} == {False, True}
+    assert all(record["usage"]["input_tokens"] > 0 for record in invocation_records)
+    assert all(record["usage"]["output_tokens"] > 0 for record in invocation_records)
+    assert {record["upstream_session_id"] for record in invocation_records} == {
+        invocation_records[0]["upstream_session_id"]
+    }
+    assert {record["codex_thread_id"] for record in invocation_records} == {
+        "codex-thread-1"
+    }
 
 
 @pytest.mark.skipif(

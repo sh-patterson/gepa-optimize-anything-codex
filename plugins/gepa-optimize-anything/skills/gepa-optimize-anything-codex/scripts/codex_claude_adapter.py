@@ -271,6 +271,17 @@ def _max_adapter_invocations() -> int:
     return int(raw_limit)
 
 
+def _pre_submission_retries() -> int:
+    raw_limit = os.environ.get("CODEX_ADAPTER_PRE_SUBMISSION_RETRIES")
+    if raw_limit is None:
+        return PRE_SUBMISSION_RETRIES
+    if not raw_limit.isascii() or not raw_limit.isdecimal():
+        raise RuntimeError(
+            "CODEX_ADAPTER_PRE_SUBMISSION_RETRIES must be a non-negative integer"
+        )
+    return int(raw_limit)
+
+
 def _claim_invocation_slot(state_dir: Path) -> None:
     limit = _max_adapter_invocations()
     slots_dir = state_dir / "invocation-slots"
@@ -503,9 +514,14 @@ def invoke_codex(request: AgentRequest) -> CodexRun:
         command = _codex_command(request, codex, resumed_thread)
         child_env = scrubbed_env()
         api_key = os.environ.get("CODEX_API_KEY")
+        if os.environ.get("CODEX_ADAPTER_AUTH_MODE") == "chatgpt_login" and any(
+            os.environ.get(name) for name in ("CODEX_API_KEY", "OPENAI_API_KEY")
+        ):
+            raise RuntimeError("staged-login proof cannot expose API keys")
         if api_key:
             child_env["CODEX_API_KEY"] = api_key
-        for attempt in range(PRE_SUBMISSION_RETRIES + 1):
+        retries = _pre_submission_retries()
+        for attempt in range(retries + 1):
             attempt_started = time.monotonic()
             _claim_invocation_slot(state_dir)
             try:
@@ -513,7 +529,7 @@ def invoke_codex(request: AgentRequest) -> CodexRun:
                 break
             except OSError as exc:
                 if (
-                    attempt >= PRE_SUBMISSION_RETRIES
+                    attempt >= retries
                     or exc.errno not in RETRYABLE_LAUNCH_ERRNOS
                 ):
                     raise
