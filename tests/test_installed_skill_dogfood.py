@@ -45,7 +45,7 @@ def _installed_skill(tmp_path: Path) -> Path:
     (skill / "SKILL.md").write_text("# installed\n", encoding="utf-8")
     manifest = plugin / ".codex-plugin" / "plugin.json"
     manifest.parent.mkdir()
-    manifest.write_text('{"version":"0.3.2"}\n', encoding="utf-8")
+    manifest.write_text('{"version":"1.0.0"}\n', encoding="utf-8")
     (skill / "scripts").mkdir()
     return skill
 
@@ -265,7 +265,7 @@ def test_fake_codex_run_writes_sanitized_hashed_receipt(
         "_source",
         lambda _skill, staged: {
             "installed_plugin": True,
-            "plugin_version": "0.3.2",
+            "plugin_version": "1.0.0",
             "repository_commit": "a" * 40,
             "gepa_commit": "b" * 40,
             **staged,

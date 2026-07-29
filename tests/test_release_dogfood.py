@@ -225,7 +225,7 @@ def test_cli_requires_explicit_live_run_authorization(
     assert "RUN_CODEX_LIVE=1" in capsys.readouterr().err
 
 
-def _installed_skill(tmp_path: Path, version: str = "0.3.2") -> Path:
+def _installed_skill(tmp_path: Path, version: str = "1.0.0") -> Path:
     plugin = tmp_path / "installed" / "gepa-optimize-anything"
     skill = plugin / "skills" / "gepa-optimize-anything-codex"
     skill.mkdir(parents=True)

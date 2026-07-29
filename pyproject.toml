@@ -1,6 +1,6 @@
 [project]
 name = "gepa-optimize-anything-codex"
-version = "0.3.2"
+version = "1.0.0"
 description = "Codex adapter for GEPA Optimize Anything"
 requires-python = ">=3.11"
 license = "MIT"

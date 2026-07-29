@@ -25,7 +25,7 @@ def _installed_skill(tmp_path: Path) -> Path:
     (skill / "SKILL.md").write_text("# installed\n", encoding="utf-8")
     manifest = plugin / ".codex-plugin" / "plugin.json"
     manifest.parent.mkdir()
-    manifest.write_text('{"version":"0.3.2"}\n', encoding="utf-8")
+    manifest.write_text('{"version":"1.0.0"}\n', encoding="utf-8")
     scripts = skill / "scripts"
     scripts.mkdir()
     (scripts / "codex_lm.py").write_text("# driver\n", encoding="utf-8")
