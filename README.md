@@ -126,6 +126,15 @@ and estimate, cost agreement, session mapping, and the persisted receipt:
 RUN_CODEX_LIVE=1 python -m pytest -q tests/test_live_optimize_anything.py
 ```
 
+The same live test file runs installed-plugin smokes for the in-process `gepa`
+and `best_of_n` engines with `OPENAI_API_KEY` and the exact
+`openai/gpt-5.1` model. Their standalone commands are:
+
+```bash
+RUN_CODEX_LIVE=1 python scripts/release_inprocess_smoke.py --engine gepa --output-dir /tmp/gepa-smoke
+RUN_CODEX_LIVE=1 python scripts/release_inprocess_smoke.py --engine best_of_n --output-dir /tmp/best-of-n-smoke
+```
+
 Do not set `max_token_cost`. For release dogfood, use a dedicated project hard
 limit and inspect each durable runner receipt before starting the next engine.
 A submitted call and its accounting can arrive after that check. This is an

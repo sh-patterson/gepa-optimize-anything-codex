@@ -12,6 +12,47 @@ import pytest
 
 ROOT = Path(__file__).parents[1]
 RELEASE_DOGFOOD = ROOT / "scripts" / "release_dogfood.py"
+INPROCESS_SMOKE = ROOT / "scripts" / "release_inprocess_smoke.py"
+
+
+@pytest.mark.live
+@pytest.mark.skipif(
+    os.environ.get("RUN_CODEX_LIVE") != "1",
+    reason="requires live OpenAI Platform calls",
+)
+@pytest.mark.parametrize("engine", ("gepa", "best_of_n"))
+def test_installed_inprocess_smoke(
+    tmp_path: Path, engine: str
+) -> None:
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(INPROCESS_SMOKE),
+            "--engine",
+            engine,
+            "--output-dir",
+            str(tmp_path / engine),
+        ],
+        cwd=ROOT,
+        env={**os.environ, "RUN_CODEX_LIVE": "1"},
+        capture_output=True,
+        text=True,
+        timeout=700,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    receipt = json.loads(proc.stdout)
+    assert receipt["status"] == "success"
+    assert receipt["engine"] == engine
+    assert receipt["provider"] == "openai"
+    assert receipt["model"] == "openai/gpt-5.1"
+    assert receipt["retry_count"] == 0
+    assert receipt["result"]["improved"] is True
+    assert receipt["result"]["best_score"] == 1.0
+    assert receipt["usage"]["input_tokens"] + receipt["usage"]["output_tokens"] > 0
+    assert receipt["provenance"]["installed_plugin"] is True
+    assert receipt["hashes"]
 
 
 @pytest.mark.live
