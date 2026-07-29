@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 from typing import Any, Literal
+from uuid import uuid4
 
 VALUE_FLAGS = {
     "--effort",
@@ -28,6 +29,7 @@ SUPPORTED_SOURCE_MODELS = frozenset({"claude-sonnet-4-6", TARGET_MODEL})
 NO_VALUE_FLAGS = {"--print"}
 EXPECTED_DISALLOWED_TOOLS = "--disallowedTools=WebFetch,WebSearch"
 TERMINATION_GRACE_SECONDS = 2.0
+INVOCATION_RECORD_SCHEMA_VERSION = 1
 
 
 @dataclass(frozen=True)
@@ -50,6 +52,7 @@ class CodexRun:
     usage: dict[str, int]
     stderr: str
     duration_ms: int
+    terminal_status: Literal["completed", "failed", "ambiguous"]
 
 
 @dataclass(frozen=True)
@@ -196,6 +199,10 @@ def parse_codex_output(raw: str) -> CodexTerminalState:
             messages.append(str(item.get("text") or ""))
         if event.get("type") in {"turn.failed", "error"}:
             terminal_events += 1
+            if terminal_events != 1:
+                status = "failed"
+                error = "Codex emitted multiple terminal events"
+                continue
             status = "failed"
             error = _error_message(event)
             continue
@@ -241,6 +248,35 @@ def _state_dir() -> Path:
     return state_dir
 
 
+def _max_adapter_invocations() -> int | None:
+    raw_limit = os.environ.get("CODEX_ADAPTER_MAX_INVOCATIONS")
+    if raw_limit is None:
+        return None
+    if not raw_limit.isascii() or not raw_limit.isdecimal() or int(raw_limit) < 1:
+        raise RuntimeError("CODEX_ADAPTER_MAX_INVOCATIONS must be a positive integer")
+    return int(raw_limit)
+
+
+def _claim_invocation_slot(state_dir: Path) -> None:
+    limit = _max_adapter_invocations()
+    if limit is None:
+        return
+    slots_dir = state_dir / "invocation-slots"
+    slots_dir.mkdir(parents=True, exist_ok=True)
+    for number in range(1, limit + 1):
+        path = slots_dir / str(number)
+        try:
+            descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            continue
+        except OSError as exc:
+            raise RuntimeError("unable to claim Codex adapter invocation slot") from exc
+        with os.fdopen(descriptor, "w", encoding="utf-8"):
+            pass
+        return
+    raise RuntimeError("CODEX_ADAPTER_MAX_INVOCATIONS invocation cap exhausted")
+
+
 def _session_record_path(state_dir: Path, upstream_session_id: str) -> Path:
     digest = sha256(upstream_session_id.encode("utf-8")).hexdigest()
     return state_dir / "sessions" / f"{digest}.json"
@@ -261,10 +297,7 @@ def _load_session_thread(state_dir: Path, upstream_session_id: str) -> str | Non
     return payload["thread_id"]
 
 
-def _save_session_thread(
-    state_dir: Path, upstream_session_id: str, thread_id: str
-) -> None:
-    path = _session_record_path(state_dir, upstream_session_id)
+def _atomic_json_write(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary_path: Path | None = None
     try:
@@ -277,21 +310,69 @@ def _save_session_thread(
             delete=False,
         ) as temporary:
             temporary_path = Path(temporary.name)
-            json.dump(
-                {
-                    "upstream_session_id": upstream_session_id,
-                    "thread_id": thread_id,
-                },
-                temporary,
-                indent=2,
-                sort_keys=True,
-            )
+            json.dump(payload, temporary, indent=2, sort_keys=True)
             temporary.write("\n")
         os.replace(temporary_path, path)
     except OSError:
         if temporary_path is not None:
             temporary_path.unlink(missing_ok=True)
         raise
+
+
+def _save_session_thread(
+    state_dir: Path, upstream_session_id: str, thread_id: str
+) -> None:
+    path = _session_record_path(state_dir, upstream_session_id)
+    _atomic_json_write(
+        path,
+        {
+            "upstream_session_id": upstream_session_id,
+            "thread_id": thread_id,
+        },
+    )
+
+
+def _invocation_terminal_status(
+    returncode: int, terminal: CodexTerminalState
+) -> Literal["completed", "failed", "ambiguous"]:
+    if (
+        terminal.status == "missing"
+        or returncode != 0
+        and terminal.status == "completed"
+    ):
+        return "ambiguous"
+    if terminal.status == "failed":
+        if terminal.error and terminal.error.startswith("Codex emitted"):
+            return "ambiguous"
+        return "failed"
+    return "completed"
+
+
+def _save_invocation_record(
+    state_dir: Path, request: AgentRequest, run: CodexRun
+) -> None:
+    _atomic_json_write(
+        state_dir / "invocations" / f"{uuid4()}.json",
+        {
+            "schema_version": INVOCATION_RECORD_SCHEMA_VERSION,
+            "upstream_session_id": request.upstream_session_id,
+            "codex_thread_id": run.thread_id,
+            "resume": request.resume,
+            "source_model": request.source_model,
+            "target_model": request.target_model,
+            "reasoning_effort": request.reasoning_effort,
+            "return_code": run.returncode,
+            "terminal_status": run.terminal_status,
+            "usage": run.usage,
+            "estimated_cost_usd": estimated_luna_cost(run.usage),
+            "cost_status": (
+                "standard_tier_upper_estimate_from_observed_usage"
+                if run.usage
+                else "unknown"
+            ),
+            "duration_ms": run.duration_ms,
+        },
+    )
 
 
 def _codex_command(
@@ -379,60 +460,82 @@ def _run_codex(
 
 
 def invoke_codex(request: AgentRequest) -> CodexRun:
-    if request.requested_budget_usd is not None:
-        raise ValueError(
-            "--max-budget-usd is unsupported because this adapter cannot "
-            "enforce a USD cap; omit max_token_cost for Codex agentic engines"
-        )
-    codex = os.environ.get("CODEX_CLI") or shutil.which("codex")
-    if not codex:
-        raise RuntimeError("Codex CLI was not found")
     state_dir = _state_dir()
-    resumed_thread = (
-        _load_session_thread(state_dir, request.upstream_session_id)
-        if request.resume
-        else None
-    )
-    command = _codex_command(request, codex, resumed_thread)
-    child_env = scrubbed_env()
-    api_key = os.environ.get("CODEX_API_KEY") or os.environ.get("OPENAI_API_KEY")
-    if api_key:
-        child_env["CODEX_API_KEY"] = api_key
     started = time.monotonic()
-    proc = _run_codex(command, request.cwd, child_env)
-    terminal = parse_codex_output(proc.stdout)
-    duration_ms = round((time.monotonic() - started) * 1000)
-    if proc.returncode == 0:
-        validation_error: str | None = None
-        if terminal.status != "completed":
-            validation_error = (
-                terminal.error or "Codex exited without a completed turn"
+    try:
+        if request.requested_budget_usd is not None:
+            raise ValueError(
+                "--max-budget-usd is unsupported because this adapter cannot "
+                "enforce a USD cap; omit max_token_cost for Codex agentic engines"
             )
-        elif not terminal.final_message.strip():
-            validation_error = "Codex completed without a final agent message"
-        elif not request.resume and terminal.thread_id is None:
-            validation_error = "Codex completed without a thread.started event"
-        if validation_error is not None:
-            return CodexRun(
-                returncode=1,
-                thread_id=terminal.thread_id or resumed_thread,
-                final_message=terminal.final_message,
-                usage=terminal.usage,
-                stderr=f"{proc.stderr}{validation_error}\n",
-                duration_ms=duration_ms,
-            )
-        if not request.resume:
-            _save_session_thread(
-                state_dir, request.upstream_session_id, terminal.thread_id
-            )
-    return CodexRun(
-        returncode=proc.returncode,
-        thread_id=terminal.thread_id or resumed_thread,
-        final_message=terminal.final_message,
-        usage=terminal.usage,
-        stderr=proc.stderr,
-        duration_ms=duration_ms,
-    )
+        codex = os.environ.get("CODEX_CLI") or shutil.which("codex")
+        if not codex:
+            raise RuntimeError("Codex CLI was not found")
+        resumed_thread = (
+            _load_session_thread(state_dir, request.upstream_session_id)
+            if request.resume
+            else None
+        )
+        command = _codex_command(request, codex, resumed_thread)
+        child_env = scrubbed_env()
+        api_key = os.environ.get("CODEX_API_KEY") or os.environ.get("OPENAI_API_KEY")
+        if api_key:
+            child_env["CODEX_API_KEY"] = api_key
+        _claim_invocation_slot(state_dir)
+        proc = _run_codex(command, request.cwd, child_env)
+        terminal = parse_codex_output(proc.stdout)
+        duration_ms = round((time.monotonic() - started) * 1000)
+        if proc.returncode == 0:
+            validation_error: str | None = None
+            if terminal.status != "completed":
+                validation_error = (
+                    terminal.error or "Codex exited without a completed turn"
+                )
+            elif not terminal.final_message.strip():
+                validation_error = "Codex completed without a final agent message"
+            elif not request.resume and terminal.thread_id is None:
+                validation_error = "Codex completed without a thread.started event"
+            if validation_error is not None:
+                run = CodexRun(
+                    returncode=1,
+                    thread_id=terminal.thread_id or resumed_thread,
+                    final_message=terminal.final_message,
+                    usage=terminal.usage,
+                    stderr=f"{proc.stderr}{validation_error}\n",
+                    duration_ms=duration_ms,
+                    terminal_status=_invocation_terminal_status(
+                        proc.returncode, terminal
+                    ),
+                )
+                _save_invocation_record(state_dir, request, run)
+                return run
+            if not request.resume:
+                _save_session_thread(
+                    state_dir, request.upstream_session_id, terminal.thread_id
+                )
+        run = CodexRun(
+            returncode=proc.returncode,
+            thread_id=terminal.thread_id or resumed_thread,
+            final_message=terminal.final_message,
+            usage=terminal.usage,
+            stderr=proc.stderr,
+            duration_ms=duration_ms,
+            terminal_status=_invocation_terminal_status(proc.returncode, terminal),
+        )
+        _save_invocation_record(state_dir, request, run)
+        return run
+    except (OSError, RuntimeError, ValueError, json.JSONDecodeError):
+        failed_run = CodexRun(
+            returncode=2,
+            thread_id=None,
+            final_message="",
+            usage={},
+            stderr="",
+            duration_ms=round((time.monotonic() - started) * 1000),
+            terminal_status="failed",
+        )
+        _save_invocation_record(state_dir, request, failed_run)
+        raise
 
 
 def estimated_luna_cost(usage: dict[str, int]) -> float:

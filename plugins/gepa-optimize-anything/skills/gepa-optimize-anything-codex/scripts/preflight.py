@@ -2,7 +2,7 @@
 """Pre-flight checks for an optimize_anything run (gepa package) — fail fast before a long job.
 
     python preflight.py                         # checks gepa + reflection-LM creds
-    python preflight.py --engine autoresearch --no-sandbox  # checks Codex + jq
+    python preflight.py --engine autoresearch  # checks Codex + Bubblewrap + jq
     GEPA_REFLECTION_LM=anthropic/claude-sonnet-4-6 python preflight.py --test-lm
 
 Exit code 0 = all good; non-zero = at least one blocker.
@@ -17,6 +17,12 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from sandbox_runtime import probe_runtime, runtime_paths, stage_runtime  # noqa: E402
 
 OK, BAD = "\033[32mOK\033[0m", "\033[31mFAIL\033[0m"
 problems: list[str] = []
@@ -90,6 +96,10 @@ def _codex_auth_available(codex: str) -> tuple[bool, str]:
     )
 
 
+def _sandbox_auth_available() -> bool:
+    return bool(os.environ.get("CODEX_API_KEY"))
+
+
 def _is_bundled_launcher(command: str) -> bool:
     try:
         return Path(command).resolve() == EXPECTED_LAUNCHER
@@ -140,7 +150,7 @@ def main() -> int:
     ap.add_argument(
         "--no-sandbox",
         action="store_true",
-        help="confirm that the run sets sandbox=False, required by this adapter",
+        help="skip the bwrap runtime probe and retain the legacy host-only checks",
     )
     ap.add_argument(
         "--test-lm",
@@ -149,6 +159,7 @@ def main() -> int:
     )
     a = ap.parse_args()
 
+    problems.clear()
     print("== optimize_anything preflight ==")
 
     # 1) import + the correct API surface
@@ -180,58 +191,96 @@ def main() -> int:
 
     # 3) agentic engines need the Codex-backed compatibility command.
     if a.engine in ("autoresearch", "meta_harness"):
-        cli = shutil.which("claude")
-        codex = shutil.which("codex")
         check(
             "Linux host (the Codex compatibility command is Linux-only)",
             sys.platform.startswith("linux"),
             "run the agentic engines from Linux",
         )
-        check(
-            f"Bundled Codex adapter `claude` on PATH (required by {a.engine})",
-            bool(cli) and _is_bundled_launcher(cli),
-            "prepend this skill's scripts directory to PATH",
-        )
-        check("`codex` CLI on PATH", bool(codex), "install and authenticate Codex CLI")
-        codex_surface_ok, codex_surface_problem = (
-            _codex_exec_surface(codex) if codex else (False, "")
-        )
-        check(
-            "Codex CLI exposes the required `exec` flags",
-            codex_surface_ok,
-            codex_surface_problem or "install a supported Codex CLI",
-        )
-        codex_auth_ok, codex_auth_source = (
-            _codex_auth_available(codex) if codex else (False, "")
-        )
-        check(
-            "Codex auth configuration (API key or existing CLI login)",
-            codex_auth_ok,
-            "set CODEX_API_KEY/OPENAI_API_KEY or run `codex login`",
-        )
-        if codex_auth_source:
-            print(f"      authenticated through {codex_auth_source}")
-        state_dir = os.environ.get("CODEX_ADAPTER_STATE_DIR")
-        check(
-            "CODEX_ADAPTER_STATE_DIR is set and writable",
-            _state_dir_writable(state_dir),
-            "export CODEX_ADAPTER_STATE_DIR to a writable private directory",
-        )
-        if cli:
-            print(f"      claude adapter -> {cli}")
-        if codex:
-            print(f"      codex -> {codex}")
+        if a.no_sandbox:
+            cli = shutil.which("claude")
+            codex = shutil.which("codex")
+            check(
+                f"Bundled Codex adapter `claude` on PATH (required by {a.engine})",
+                bool(cli) and _is_bundled_launcher(cli),
+                "prepend this skill's scripts directory to PATH",
+            )
+            check("`codex` CLI on PATH", bool(codex), "install and authenticate Codex CLI")
+            codex_surface_ok, codex_surface_problem = (
+                _codex_exec_surface(codex) if codex else (False, "")
+            )
+            check(
+                "Codex CLI exposes the required `exec` flags",
+                codex_surface_ok,
+                codex_surface_problem or "install a supported Codex CLI",
+            )
+            codex_auth_ok, codex_auth_source = (
+                _codex_auth_available(codex) if codex else (False, "")
+            )
+            check(
+                "Codex auth configuration (API key or existing CLI login)",
+                codex_auth_ok,
+                "set CODEX_API_KEY/OPENAI_API_KEY or run `codex login`",
+            )
+            if codex_auth_source:
+                print(f"      authenticated through {codex_auth_source}")
+            state_dir = os.environ.get("CODEX_ADAPTER_STATE_DIR")
+            check(
+                "CODEX_ADAPTER_STATE_DIR is set and writable",
+                _state_dir_writable(state_dir),
+                "export CODEX_ADAPTER_STATE_DIR to a writable private directory",
+            )
+            if cli:
+                print(f"      claude adapter -> {cli}")
+            if codex:
+                print(f"      codex -> {codex}")
+        else:
+            check(
+                "bubblewrap (`bwrap`) is installed",
+                bool(shutil.which("bwrap")),
+                "install bubblewrap",
+            )
+            check(
+                "CODEX_API_KEY is set for the sandboxed Codex runtime",
+                _sandbox_auth_available(),
+                "export CODEX_API_KEY",
+            )
+            paths = None
+            try:
+                paths = stage_runtime(runtime_paths())
+                check("sandbox runtime is staged under ~/.local", True)
+                print(f"      claude adapter -> {paths.launcher}")
+                print(f"      codex -> {paths.codex}")
+            except (OSError, RuntimeError) as exc:
+                check("sandbox runtime is staged under ~/.local", False, str(exc))
+            if paths is not None:
+                codex_surface_ok, codex_surface_problem = _codex_exec_surface(
+                    str(paths.codex)
+                )
+                check(
+                    "Codex CLI exposes the required `exec` flags",
+                    codex_surface_ok,
+                    codex_surface_problem or "install a supported Codex CLI",
+                )
+                if shutil.which("bwrap"):
+                    try:
+                        probe = probe_runtime(paths)
+                        check(
+                            "Bubblewrap runtime probe passes without a model call",
+                            probe.returncode == 0,
+                            (probe.stderr or probe.stdout).strip()
+                            or "check bwrap mounts",
+                        )
+                    except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+                        check(
+                            "Bubblewrap runtime probe passes without a model call",
+                            False,
+                            str(exc),
+                        )
         if a.engine == "autoresearch":
             check(
                 "`jq` on PATH (used by the generated eval.sh)",
                 bool(shutil.which("jq")),
                 "install jq",
-            )
-        if not a.no_sandbox:
-            check(
-                "sandbox=False is required for the Codex compatibility command",
-                False,
-                "pass --no-sandbox and set sandbox=False in OptimizeAnythingConfig",
             )
 
     # 4) optional live LM round-trip

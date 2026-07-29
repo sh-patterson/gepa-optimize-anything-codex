@@ -2,30 +2,62 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import importlib.util
+import sys
 from pathlib import Path
 
 import pytest
 
 
 ROOT = Path(__file__).parents[1]
-SCRIPTS = (
+CHECKOUT_SKILL_DIR = (
     ROOT
     / "plugins"
     / "gepa-optimize-anything"
     / "skills"
     / "gepa-optimize-anything-codex"
-    / "scripts"
 )
+SKILL_DIR = Path(os.environ.get("GEPA_CODEX_SKILL_DIR", CHECKOUT_SKILL_DIR)).resolve()
+assert (SKILL_DIR / "SKILL.md").is_file()
+SCRIPTS = SKILL_DIR / "scripts"
+RUNTIME_SPEC = importlib.util.spec_from_file_location(
+    "sandbox_runtime", SCRIPTS / "sandbox_runtime.py"
+)
+assert RUNTIME_SPEC is not None and RUNTIME_SPEC.loader is not None
+sandbox_runtime = importlib.util.module_from_spec(RUNTIME_SPEC)
+sys.modules[RUNTIME_SPEC.name] = sandbox_runtime
+RUNTIME_SPEC.loader.exec_module(sandbox_runtime)
 
 
-@pytest.mark.skipif(os.name != "posix", reason="the compatibility command is Linux-only")
+def _sandboxed_runtime(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fake_codex: Path
+) -> Path:
+    fake_home = tmp_path / "home"
+    state_dir = fake_home / ".cache" / "gepa-optimize-anything-codex" / "state" / "test"
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.setenv("CODEX_CLI", str(fake_codex))
+    monkeypatch.setenv("CODEX_ADAPTER_STATE_DIR", str(state_dir))
+    paths = sandbox_runtime.stage_runtime(
+        sandbox_runtime.runtime_paths(home=fake_home)
+    )
+    for name, value in sandbox_runtime.runtime_environment(paths).items():
+        monkeypatch.setenv(name, value)
+    return state_dir
+
+
+@pytest.mark.skipif(
+    os.name != "posix" or not shutil.which("bwrap"),
+    reason="the sandboxed compatibility command requires Linux bubblewrap",
+)
 def test_pinned_gepa_autoresearch_edits_evaluates_and_resumes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     pytest.importorskip("gepa")
     from gepa.optimize_anything import OptimizeAnythingConfig, optimize_anything
 
-    fake_codex = tmp_path / "codex"
+    fake_codex = tmp_path / "home" / ".local" / "bin" / "codex"
+    fake_codex.parent.mkdir(parents=True)
     invocation_log = tmp_path / "codex-invocations.jsonl"
     fake_codex.write_text(
         """#!/usr/bin/env python3
@@ -40,7 +72,7 @@ resumed = len(args) > 1 and args[0:2] == ["exec", "resume"]
 candidate = Path("best_candidate.txt")
 candidate.write_text("Return BLUE." if resumed else "Return RED again.", encoding="utf-8")
 subprocess.run(["./eval.sh", str(candidate)], check=False)
-with Path(os.environ["FAKE_CODEX_LOG"]).open("a", encoding="utf-8") as log:
+with (Path(os.environ["CODEX_ADAPTER_STATE_DIR"]) / "codex-invocations.jsonl").open("a", encoding="utf-8") as log:
     log.write(json.dumps(args) + "\\n")
 if not resumed:
     print(json.dumps({"type": "thread.started", "thread_id": "codex-thread-1"}))
@@ -56,10 +88,8 @@ print(json.dumps({
         encoding="utf-8",
     )
     fake_codex.chmod(0o755)
-    monkeypatch.setenv("CODEX_CLI", str(fake_codex))
-    monkeypatch.setenv("CODEX_ADAPTER_STATE_DIR", str(tmp_path / "adapter-state"))
-    monkeypatch.setenv("FAKE_CODEX_LOG", str(invocation_log))
-    monkeypatch.setenv("PATH", f"{SCRIPTS}{os.pathsep}{os.environ['PATH']}")
+    state_dir = _sandboxed_runtime(tmp_path, monkeypatch, fake_codex)
+    invocation_log = state_dir / "codex-invocations.jsonl"
 
     def evaluate(candidate: str, _example: object) -> tuple[float, dict]:
         passed = "BLUE" in candidate
@@ -77,7 +107,7 @@ print(json.dumps({
             engine="autoresearch",
             max_evals=5,
             stop_at_score=1.0,
-            sandbox=False,
+            sandbox=True,
             run_dir=str(tmp_path / "run"),
             output_dir=str(tmp_path / "output"),
             engine_config={"ralph": True},
@@ -96,17 +126,21 @@ print(json.dumps({
     assert result.best_score == 1.0
     assert result.total_evals == 2
     assert result.metadata["adapter_cost"] > 0
-    assert len(list((tmp_path / "adapter-state" / "sessions").glob("*.json"))) == 1
+    assert len(list((state_dir / "sessions").glob("*.json"))) == 1
 
 
-@pytest.mark.skipif(os.name != "posix", reason="the compatibility command is Linux-only")
+@pytest.mark.skipif(
+    os.name != "posix" or not shutil.which("bwrap"),
+    reason="the sandboxed compatibility command requires Linux bubblewrap",
+)
 def test_pinned_gepa_meta_harness_reads_skill_and_submits_candidate(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     pytest.importorskip("gepa")
     from gepa.optimize_anything import OptimizeAnythingConfig, optimize_anything
 
-    fake_codex = tmp_path / "codex"
+    fake_codex = tmp_path / "home" / ".local" / "bin" / "codex"
+    fake_codex.parent.mkdir(parents=True)
     invocation_log = tmp_path / "codex-invocations.jsonl"
     fake_codex.write_text(
         """#!/usr/bin/env python3
@@ -135,7 +169,7 @@ pending.write_text(json.dumps({
         "components": ["required-token"],
     }],
 }), encoding="utf-8")
-with Path(os.environ["FAKE_CODEX_LOG"]).open("a", encoding="utf-8") as log:
+with (Path(os.environ["CODEX_ADAPTER_STATE_DIR"]) / "codex-invocations.jsonl").open("a", encoding="utf-8") as log:
     log.write(json.dumps(args) + "\\n")
 print(json.dumps({"type": "thread.started", "thread_id": "codex-thread-mh-1"}))
 print(json.dumps({
@@ -150,10 +184,8 @@ print(json.dumps({
         encoding="utf-8",
     )
     fake_codex.chmod(0o755)
-    monkeypatch.setenv("CODEX_CLI", str(fake_codex))
-    monkeypatch.setenv("CODEX_ADAPTER_STATE_DIR", str(tmp_path / "adapter-state"))
-    monkeypatch.setenv("FAKE_CODEX_LOG", str(invocation_log))
-    monkeypatch.setenv("PATH", f"{SCRIPTS}{os.pathsep}{os.environ['PATH']}")
+    state_dir = _sandboxed_runtime(tmp_path, monkeypatch, fake_codex)
+    invocation_log = state_dir / "codex-invocations.jsonl"
 
     def evaluate(candidate: str) -> tuple[float, dict]:
         passed = "BLUE" in candidate
@@ -170,7 +202,7 @@ print(json.dumps({
             engine="meta_harness",
             max_evals=3,
             stop_at_score=1.0,
-            sandbox=False,
+            sandbox=True,
             run_dir=str(tmp_path / "run"),
             output_dir=str(tmp_path / "output"),
             engine_config={
@@ -191,4 +223,4 @@ print(json.dumps({
     assert result.total_evals == 2
     assert result.metadata["adapter_cost"] > 0
     assert result.metadata["meta_harness"]["stop_reason"] == "perfect_score"
-    assert len(list((tmp_path / "adapter-state" / "sessions").glob("*.json"))) == 1
+    assert len(list((state_dir / "sessions").glob("*.json"))) == 1

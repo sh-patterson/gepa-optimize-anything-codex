@@ -39,19 +39,20 @@ long-context multiplier; it is not provider billing.
 
 ## Supported agentic configuration
 
-The compatibility command is Linux-only. Set `sandbox=False` and pass
-`--no-sandbox` to preflight. The default GEPA bubblewrap sandbox does not mount
-every Codex installation and auth location the adapter needs. Codex still runs
-the translated command in its own `workspace-write` sandbox. The process
-inherits non-Anthropic host credentials such as repository or cloud tokens,
-matching GEPA's unsandboxed environment behavior; run from a disposable,
-least-privilege environment and unset secrets the task does not need.
+The compatibility command is Linux-only and uses GEPA's default Bubblewrap
+sandbox. Install Codex with
+`npm install --prefix "$HOME/.local" @openai/codex`, prepend
+`~/.local/node_modules/.bin` to `PATH`, set `CODEX_API_KEY`, and stage the
+adapter with `sandbox_runtime.py stage`. Run preflight before starting an
+agentic engine. Codex uses writable homes beneath `~/.cache`.
 
 Do not set `max_token_cost` for `autoresearch` or `meta_harness`. GEPA sends it
 to the compatibility command as `--max-budget-usd`; the adapter rejects that
 flag before spawning Codex because it cannot enforce a USD ceiling. Use
 `max_evals`, `stop_at_score`, and a host-level timeout. Set an external spend
-limit in the OpenAI account before a paid run.
+limit in the OpenAI account before a paid run. That account-level control does
+not satisfy GEPA's per-invocation hard-budget contract. The `v1.0.0`
+hard-budget gate remains [externally blocked](HARD_BUDGET.md).
 
 The adapter accepts pinned GEPA's exact
 `--disallowedTools=WebFetch,WebSearch`, `--output-format json`, and
@@ -67,19 +68,36 @@ access.
 python -m pytest -q
 ```
 
-Run the direct live smoke only when you intend to make one Codex model call:
+Run the direct adapter smoke only when you intend to make one Codex model call:
 
 ```bash
 RUN_CODEX_AGENT_SMOKE=1 python -m pytest -q \
   tests/test_adapter.py::test_live_codex_round_trip
 ```
 
-The GEPA live smoke is separate and may invoke the agent more than once:
+The release dogfood runner makes paid calls. It runs one bounded engine, writes
+a durable receipt, caps the adapter at one invocation, and exits nonzero when
+its evidence is incomplete. Run each engine separately:
 
 ```bash
-RUN_CODEX_AGENT_SMOKE=1 python -m pytest -q \
-  tests/test_live_optimize_anything.py::test_autoresearch_improves_a_deterministic_text_candidate
+RUN_CODEX_AGENT_SMOKE=1 python scripts/release_dogfood.py --engine autoresearch
+RUN_CODEX_AGENT_SMOKE=1 python scripts/release_dogfood.py --engine meta_harness
 ```
+
+The matching pytest cases are also opt-in. They verify Luna with high reasoning,
+the Bubblewrap sandbox, a deterministic `RED` to `BLUE` result, positive usage
+and estimate, cost agreement, session mapping, and the persisted receipt:
+
+```bash
+RUN_CODEX_AGENT_SMOKE=1 python -m pytest -q tests/test_live_optimize_anything.py
+```
+
+Do not set `max_token_cost`. For release dogfood, use a dedicated project hard
+limit and inspect each durable runner receipt before starting the next engine.
+A submitted call and its accounting can arrive after that check. This is an
+operational backstop, not per-invocation USD enforcement. Outside the release
+runner, set `CODEX_ADAPTER_MAX_INVOCATIONS` to a positive integer to apply the
+same fail-closed request-count guard to a unique adapter state directory.
 
 ## Scope
 

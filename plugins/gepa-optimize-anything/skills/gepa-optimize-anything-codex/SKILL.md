@@ -16,17 +16,19 @@ For every `autoresearch` or `meta_harness` run:
 
 1. Resolve `SKILL_DIR` to the absolute directory containing this `SKILL.md`. Use the installed skill path supplied by Codex. Do not ask the user to find the plugin cache.
 2. Install pinned GEPA if the active Python environment does not already provide it.
-3. Set `CODEX_ADAPTER_STATE_DIR` to a run-specific writable directory.
-4. Run `"$SKILL_DIR/scripts/preflight.py" --engine <engine> --no-sandbox`.
-5. Launch the user's Python program from the same shell with `"$SKILL_DIR/scripts"` first on `PATH`.
+3. Run `npm install --prefix "$HOME/.local" @openai/codex`, prepend `"$HOME/.local/node_modules/.bin"` to `PATH`, and set `CODEX_API_KEY`.
+4. Stage the adapter with `RUNTIME_BIN="$(python "$SKILL_DIR/scripts/sandbox_runtime.py" stage)"`.
+5. Prepend `RUNTIME_BIN` to `PATH`. Set `CODEX_HOME` and a unique `CODEX_ADAPTER_STATE_DIR` beneath `~/.cache/gepa-optimize-anything-codex`.
+6. Run `"$SKILL_DIR/scripts/preflight.py" --engine <engine>`.
+7. Launch the user's Python program with `sandbox=True`.
 
 ## Codex adapter limits
 
-The agentic compatibility command supports Linux only. Set `sandbox=False` in `OptimizeAnythingConfig` and run preflight with `--no-sandbox`. GEPA's default bubblewrap jail does not reliably expose the adapter, Codex installation, and Codex auth state together. Codex retains its `workspace-write` sandbox, but the child inherits non-Anthropic host credentials; use a disposable, least-privilege environment and unset secrets the task does not need.
+The agentic compatibility command supports Linux only. Keep GEPA's default `sandbox=True`. Staging puts the adapter under Bubblewrap's read-only `~/.local` bind. Keep `CODEX_HOME` and adapter state under its writable `~/.cache` bind. Use `CODEX_API_KEY`; the jail does not expose the normal Codex login directory.
 
 The adapter maps the pinned GEPA default `claude-sonnet-4-6` to `gpt-5.6-luna`. It rejects other source models before starting Codex. It uses an existing `codex login` when no API key is set, although no-call preflight cannot prove that login's token is fresh. `CODEX_API_KEY` or `OPENAI_API_KEY` selects the documented noninteractive path. The adapter preserves the existing `CODEX_HOME`; it does not copy auth into its session-state directory.
 
-Do not set `max_token_cost` with `autoresearch` or `meta_harness`. GEPA passes it as `--max-budget-usd`; the adapter rejects that flag before spawning Codex because it cannot enforce a USD cap. Use `max_evals`, `stop_at_score`, a host-level timeout, and an OpenAI account spend limit. `total_cost_usd` is a conservative standard-tier estimate from observed tokens, not provider billing. The adapter accepts pinned GEPA's exact web-tool denial, disables Codex's standalone web search, and rejects unknown policy values plus `--settings` before Codex starts. Shell network access remains available, matching GEPA's unsandboxed agent path.
+Do not set `max_token_cost` with `autoresearch` or `meta_harness`. GEPA passes it as `--max-budget-usd`; the adapter rejects that flag before spawning Codex because it cannot enforce a USD cap. Use `max_evals`, `stop_at_score`, a host-level timeout, and an OpenAI account spend limit. Set `CODEX_ADAPTER_MAX_INVOCATIONS` to a positive integer to atomically cap adapter starts within a unique state directory; a claimed slot remains consumed after failure. `total_cost_usd` is a conservative standard-tier estimate from observed tokens, not provider billing. The adapter accepts pinned GEPA's exact web-tool denial, disables Codex's standalone web search, and rejects unknown policy values plus `--settings` before Codex starts. Shell network access remains available, matching GEPA's unsandboxed agent path.
 
 **Naming, precisely.** `optimize_anything` is the tool: a general API for optimizing text
 artifacts. **GEPA** is one specific optimizer behind it — reflective evolutionary search, the
@@ -97,7 +99,7 @@ even see it). See `references/api.md` for details and when to use each mode.
 
 ## Install
 ```bash
-pip install "gepa[full] @ git+https://github.com/gepa-ai/gepa.git@f919db0a622e2e9f9204779b81fe00cc1b2d808f"
+pip install "gepa[full] @ git+https://github.com/sh-patterson/gepa.git@41ca7c3a3d1cc502ab357163325b9751a05507f6"
 # [full] pulls cloudpickle — needed to pickle closure evaluators for
                            # parallel workers / opt-in evaluation caching; plain `pip install gepa`
                            # can fail there when your evaluator closes over data.
@@ -107,10 +109,10 @@ pip install "gepa[full] @ git+https://github.com/gepa-ai/gepa.git@f919db0a622e2e
 # Agentic backends (autoresearch, meta_harness) additionally need the Codex CLI and this skill's
 # `scripts/claude` compatibility command on PATH (plus `jq` for the generated eval.sh).
 # Resolve SKILL_DIR to the directory containing this installed SKILL.md:
-export PATH="$SKILL_DIR/scripts:$PATH"
-export CODEX_ADAPTER_STATE_DIR="$PWD/.codex-adapter-state"
-# This Linux-only adapter requires sandbox=False for agentic engines. GEPA's
-# bubblewrap sandbox cannot reliably expose the Codex installation and auth state.
+RUNTIME_BIN="$(python "$SKILL_DIR/scripts/sandbox_runtime.py" stage)"
+export PATH="$RUNTIME_BIN:$PATH"
+export CODEX_HOME="$HOME/.cache/gepa-optimize-anything-codex/codex"
+export CODEX_ADAPTER_STATE_DIR="$(mktemp -d "$HOME/.cache/gepa-optimize-anything-codex/runs/run-XXXXXX")"
 ```
 
 ## Mental model (4 pieces)
@@ -251,8 +253,7 @@ print(
 
 ## Critical gotchas (read before a real run)
 
-- **Linux sandbox visibility.** This adapter requires `sandbox=False` for GEPA's outer jail; Codex
-  still runs with its own `workspace-write` sandbox. Use a disposable work directory.
+- **Linux sandbox visibility.** Stage and probe the runtime before an agentic run. Keep Codex and adapter state beneath `~/.cache`.
 These silently degrade *results* — skim before launching:
 - **Reward hacking.** Every backend optimizes exactly what you score; a weak proxy gets gamed (e.g. a
   "correct"-only score → a do-nothing wrapper). Gate the score on the real goal. → `references/gotchas.md`.
@@ -268,7 +269,7 @@ These silently degrade *results* — skim before launching:
 - **`engine_config` is validated strictly per backend** — an unknown key (including a leftover key
   from a different backend after swapping `engine=`) raises `TypeError` at construction. Swapping
   `engine=` means swapping the `engine_config` block. → `references/api.md`.
-- **Agentic backends (`autoresearch`, `meta_harness`) shell out to a command named `claude`.** This port supplies that command and invokes Codex. It requires Linux and `sandbox=False`. Run `scripts/preflight.py --engine autoresearch --no-sandbox` before a real run.
+- **Agentic backends (`autoresearch`, `meta_harness`) shell out to a command named `claude`.** This port stages that command inside GEPA's Linux Bubblewrap jail and invokes Codex. Run `scripts/preflight.py --engine autoresearch` before a real run.
 
 ## Reference files (load as needed)
 - `references/api.md` — `OptimizeAnythingConfig`, the backends and their typed `engine_config`

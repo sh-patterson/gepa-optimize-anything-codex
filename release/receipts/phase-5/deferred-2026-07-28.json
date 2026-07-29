@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "status": "deferred",
+  "paid_calls": 0,
+  "plugin_commit": "f38570b35a2499d2e567682827d326b7dd709b66",
+  "gepa_commit": "41ca7c3a3d1cc502ab357163325b9751a05507f6",
+  "reason": "No provider-enforced per-invocation USD ceiling was available and no project hard limit was configured.",
+  "release_claim_excluded": "Installed Luna-high live dogfood passed.",
+  "remaining_controls": {
+    "proposer_iterations": 1,
+    "max_evals": 3,
+    "timeout_seconds": 600,
+    "max_adapter_invocations": 1,
+    "retries": 0,
+    "engine_execution": "serial"
+  }
+}

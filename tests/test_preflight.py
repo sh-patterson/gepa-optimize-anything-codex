@@ -47,6 +47,15 @@ def test_api_key_is_accepted_without_running_codex_login(monkeypatch):
     assert preflight._codex_auth_available("codex") == (True, "CODEX_API_KEY")
 
 
+def test_sandbox_requires_codex_api_key(monkeypatch):
+    monkeypatch.delenv("CODEX_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "not-valid-for-sandbox-preflight")
+    assert not preflight._sandbox_auth_available()
+
+    monkeypatch.setenv("CODEX_API_KEY", "test-key")
+    assert preflight._sandbox_auth_available()
+
+
 def test_launcher_check_rejects_an_unrelated_claude_command(tmp_path):
     unrelated = tmp_path / "claude"
     unrelated.write_text("#!/bin/sh\n", encoding="utf-8")

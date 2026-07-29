@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 import hashlib
+import tomllib
 from pathlib import Path
 
 
 ROOT = Path(__file__).parents[1]
+PINNED_GEPA_COMMIT = "41ca7c3a3d1cc502ab357163325b9751a05507f6"
+PINNED_GEPA_DEPENDENCY = (
+    "gepa[full] @ git+https://github.com/sh-patterson/gepa.git@"
+    f"{PINNED_GEPA_COMMIT}"
+)
 SKILL = (
     ROOT
     / "plugins"
@@ -28,12 +34,12 @@ PINNED_UPSTREAM_SHA256 = {
 }
 
 REVIEWED_LOCAL_SHA256 = {
-    "SKILL.md": "3cd86ea1435461c96ee167b1a1ec316a0f764cf0eec9d6a2d093cfd35364b539",
+    "SKILL.md": "e4a8f445f03c8500c84eaaad1a37aeb99487cf2c8ce90eaeecde4f54f0c3dc92",
     "references/api.md": (
-        "802f9bba2c0ce46d9411a2c3dd5488764ecac1d3f23dd32d780936e4724558d7"
+        "7ca0f1145dd7cbc1e6c4ea0c5e1f18c71e4c545a947e7ee7203b65aac13bf2e8"
     ),
     "references/gotchas.md": (
-        "bc2ea2de65332f453ada5d955a07d9f7a46e231735c14037d31d81f2586d5187"
+        "0f72878ee60b242215f8ef35c8309fc81544977d999ec361ab870fee2a363399"
     ),
     "references/tracking.md": PINNED_UPSTREAM_SHA256["references/tracking.md"],
     "references/writing_evaluators.md": PINNED_UPSTREAM_SHA256[
@@ -82,9 +88,49 @@ def test_copied_docs_match_reviewed_upstream_adaptation() -> None:
         assert actual_hash == expected_hash, relative_path
 
 
+def test_gepa_pin_is_consistent_across_install_paths() -> None:
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    live_dependencies = pyproject["project"]["optional-dependencies"]["live"]
+    upstream = (ROOT / "UPSTREAM.md").read_text(encoding="utf-8")
+    skill = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+
+    assert live_dependencies == [PINNED_GEPA_DEPENDENCY]
+    assert PINNED_GEPA_COMMIT in upstream
+    assert PINNED_GEPA_DEPENDENCY in skill
+
+
 def test_upstream_copy_has_no_known_truncations() -> None:
     copied_text = "\n".join(
         path.read_text(encoding="utf-8") for path in SKILL.rglob("*.md")
     )
     found = sorted(fragment.strip() for fragment in KNOWN_TRUNCATIONS if fragment in copied_text)
     assert found == []
+
+
+def test_adapter_invocation_journal_stays_metadata_only() -> None:
+    adapter = (SKILL / "scripts" / "codex_claude_adapter.py").read_text(
+        encoding="utf-8"
+    )
+    start = adapter.index("def _save_invocation_record")
+    end = adapter.index("\ndef _codex_command", start)
+    journal = adapter[start:end]
+
+    assert 'state_dir / "invocations" / f"{uuid4()}.json"' in journal
+    for field in (
+        "schema_version",
+        "upstream_session_id",
+        "codex_thread_id",
+        "resume",
+        "source_model",
+        "target_model",
+        "reasoning_effort",
+        "return_code",
+        "terminal_status",
+        "usage",
+        "estimated_cost_usd",
+        "cost_status",
+        "duration_ms",
+    ):
+        assert f'"{field}":' in journal
+    for forbidden in ("request.prompt", "run.final_message", "run.stderr", "API_KEY"):
+        assert forbidden not in journal

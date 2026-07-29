@@ -12,6 +12,71 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - run: sudo apt-get update && sudo apt-get install -y bubblewrap
+      - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: python -m pip install -e ".[dev,live]"
       - run: python -m pytest -q -m "not live"
       - run: python -m ruff check .
+
+  clean-install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update && sudo apt-get install -y bubblewrap jq
+      - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: install isolated marketplace
+        run: |
+          set -euo pipefail
+          CLEAN_ROOT="$RUNNER_TEMP/gepa-clean-install"
+          VENV="$CLEAN_ROOT/venv"
+          export HOME="$CLEAN_ROOT/home"
+          export CODEX_HOME="$CLEAN_ROOT/codex-home"
+          mkdir -p "$HOME" "$CODEX_HOME" "$VENV" "$CLEAN_ROOT/marketplace"
+          python -m venv "$VENV"
+          "$VENV/bin/python" -m pip install --upgrade pip
+          "$VENV/bin/python" -m pip install --no-cache-dir ".[dev,live]"
+          git archive --format=tar HEAD | tar -x -C "$CLEAN_ROOT/marketplace"
+          test -f "$CLEAN_ROOT/marketplace/.agents/plugins/marketplace.json"
+          npm install --prefix "$HOME/.local" @openai/codex@0.144.6
+          export PATH="$HOME/.local/node_modules/.bin:$PATH"
+          codex --version | grep -F "0.144.6"
+          codex plugin marketplace add "$CLEAN_ROOT/marketplace" --json | tee "$CLEAN_ROOT/marketplace-add.json"
+          codex plugin add gepa-optimize-anything@gepa-optimize-anything-codex --json | tee "$CLEAN_ROOT/plugin-add.json"
+          codex plugin list --json | tee "$CLEAN_ROOT/plugin-list.json"
+          test "$(jq -r '.marketplaceName' "$CLEAN_ROOT/marketplace-add.json")" = "gepa-optimize-anything-codex"
+          INSTALLED_PLUGIN="$(jq -er '.installedPath' "$CLEAN_ROOT/plugin-add.json")"
+          test "$(jq -r '.name' "$CLEAN_ROOT/plugin-add.json")" = "gepa-optimize-anything"
+          test "$(jq -r '.version' "$CLEAN_ROOT/plugin-add.json")" = "0.3.0"
+          jq -e 'any(.installed[]; .name == "gepa-optimize-anything" and .installed == true and .enabled == true and .version == "0.3.0")' "$CLEAN_ROOT/plugin-list.json" > /dev/null
+          INSTALLED_PLUGIN="$(readlink -f "$INSTALLED_PLUGIN")"
+          INSTALLED_SKILL="$INSTALLED_PLUGIN/skills/gepa-optimize-anything-codex"
+          test -f "$INSTALLED_PLUGIN/.codex-plugin/plugin.json"
+          test -f "$INSTALLED_SKILL/SKILL.md"
+          for source in "$CLEAN_ROOT/marketplace" "$GITHUB_WORKSPACE"; do
+            source="$(readlink -f "$source")"
+            case "$INSTALLED_SKILL" in "$source"/*) exit 1 ;; esac
+          done
+          {
+            echo "HOME=$HOME"
+            echo "CODEX_HOME=$CODEX_HOME"
+            echo "GEPA_CODEX_SKILL_DIR=$INSTALLED_SKILL"
+            echo "CLEAN_VENV=$VENV"
+          } >> "$GITHUB_ENV"
+          echo "$HOME/.local/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: run installed no-call preflights
+        env:
+          CODEX_API_KEY: ci-no-call-key
+        run: |
+          "$CLEAN_VENV/bin/python" "$GEPA_CODEX_SKILL_DIR/scripts/preflight.py" --engine autoresearch
+          "$CLEAN_VENV/bin/python" "$GEPA_CODEX_SKILL_DIR/scripts/preflight.py" --engine meta_harness
+      - name: run installed free integrations
+        run: |
+          "$CLEAN_VENV/bin/python" -c "import gepa"
+          "$CLEAN_VENV/bin/python" -m pytest -q tests/test_gepa_adapter_integration.py
+      - name: run non-live suite and Ruff
+        run: |
+          "$CLEAN_VENV/bin/python" -m pytest -q -m "not live"
+          "$CLEAN_VENV/bin/python" -m ruff check .

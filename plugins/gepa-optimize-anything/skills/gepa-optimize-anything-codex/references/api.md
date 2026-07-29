@@ -70,7 +70,8 @@ exist here: tracking is configured via the gepa backend's `engine_config["tracki
 
 ### Codex adapter exceptions
 
-For this repository's Linux-only Codex compatibility command, set `sandbox=False`.
+For this repository's Linux-only Codex compatibility command, keep the default
+`sandbox=True` and stage the runtime before launch.
 Do not pass `max_token_cost` to `autoresearch` or `meta_harness`: the adapter
 rejects the resulting `--max-budget-usd` flag before Codex starts because it
 cannot enforce a USD cap. The adapter maps its supported Claude model names to
@@ -222,7 +223,7 @@ result = optimize_sequential(
     objective="...",
     configs=[
         OptimizeAnythingConfig(
-            engine="autoresearch", max_evals=100, sandbox=False
+            engine="autoresearch", max_evals=100, sandbox=True
         ),
         OptimizeAnythingConfig(
             engine="gepa", max_evals=200
