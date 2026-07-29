@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import json
 import os
 import shutil
@@ -30,6 +31,17 @@ NO_VALUE_FLAGS = {"--print"}
 EXPECTED_DISALLOWED_TOOLS = "--disallowedTools=WebFetch,WebSearch"
 TERMINATION_GRACE_SECONDS = 2.0
 INVOCATION_RECORD_SCHEMA_VERSION = 1
+DEFAULT_MAX_ADAPTER_INVOCATIONS = 4
+PRE_SUBMISSION_RETRIES = 1
+RETRYABLE_LAUNCH_ERRNOS = frozenset(
+    {
+        errno.EAGAIN,
+        errno.EBUSY,
+        errno.EMFILE,
+        errno.ENFILE,
+        errno.ETXTBSY,
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -150,6 +162,8 @@ def scrubbed_env() -> dict[str, str]:
         "ANTHROPIC_API_KEY",
         "ANTHROPIC_AUTH_TOKEN",
         "CLAUDE_CODE_OAUTH_TOKEN",
+        "CODEX_API_KEY",
+        "OPENAI_API_KEY",
     }
     return {
         name: value
@@ -248,10 +262,10 @@ def _state_dir() -> Path:
     return state_dir
 
 
-def _max_adapter_invocations() -> int | None:
+def _max_adapter_invocations() -> int:
     raw_limit = os.environ.get("CODEX_ADAPTER_MAX_INVOCATIONS")
     if raw_limit is None:
-        return None
+        return DEFAULT_MAX_ADAPTER_INVOCATIONS
     if not raw_limit.isascii() or not raw_limit.isdecimal() or int(raw_limit) < 1:
         raise RuntimeError("CODEX_ADAPTER_MAX_INVOCATIONS must be a positive integer")
     return int(raw_limit)
@@ -259,8 +273,6 @@ def _max_adapter_invocations() -> int | None:
 
 def _claim_invocation_slot(state_dir: Path) -> None:
     limit = _max_adapter_invocations()
-    if limit is None:
-        return
     slots_dir = state_dir / "invocation-slots"
     slots_dir.mkdir(parents=True, exist_ok=True)
     for number in range(1, limit + 1):
@@ -459,6 +471,18 @@ def _run_codex(
     return subprocess.CompletedProcess(command, proc.returncode, stdout, stderr)
 
 
+def _failed_launch_run(started: float) -> CodexRun:
+    return CodexRun(
+        returncode=2,
+        thread_id=None,
+        final_message="",
+        usage={},
+        stderr="",
+        duration_ms=round((time.monotonic() - started) * 1000),
+        terminal_status="failed",
+    )
+
+
 def invoke_codex(request: AgentRequest) -> CodexRun:
     state_dir = _state_dir()
     started = time.monotonic()
@@ -478,11 +502,24 @@ def invoke_codex(request: AgentRequest) -> CodexRun:
         )
         command = _codex_command(request, codex, resumed_thread)
         child_env = scrubbed_env()
-        api_key = os.environ.get("CODEX_API_KEY") or os.environ.get("OPENAI_API_KEY")
+        api_key = os.environ.get("CODEX_API_KEY")
         if api_key:
             child_env["CODEX_API_KEY"] = api_key
-        _claim_invocation_slot(state_dir)
-        proc = _run_codex(command, request.cwd, child_env)
+        for attempt in range(PRE_SUBMISSION_RETRIES + 1):
+            attempt_started = time.monotonic()
+            _claim_invocation_slot(state_dir)
+            try:
+                proc = _run_codex(command, request.cwd, child_env)
+                break
+            except OSError as exc:
+                if (
+                    attempt >= PRE_SUBMISSION_RETRIES
+                    or exc.errno not in RETRYABLE_LAUNCH_ERRNOS
+                ):
+                    raise
+                _save_invocation_record(
+                    state_dir, request, _failed_launch_run(attempt_started)
+                )
         terminal = parse_codex_output(proc.stdout)
         duration_ms = round((time.monotonic() - started) * 1000)
         if proc.returncode == 0:
@@ -525,15 +562,7 @@ def invoke_codex(request: AgentRequest) -> CodexRun:
         _save_invocation_record(state_dir, request, run)
         return run
     except (OSError, RuntimeError, ValueError, json.JSONDecodeError):
-        failed_run = CodexRun(
-            returncode=2,
-            thread_id=None,
-            final_message="",
-            usage={},
-            stderr="",
-            duration_ms=round((time.monotonic() - started) * 1000),
-            terminal_status="failed",
-        )
+        failed_run = _failed_launch_run(started)
         _save_invocation_record(state_dir, request, failed_run)
         raise
 

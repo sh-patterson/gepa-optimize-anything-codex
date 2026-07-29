@@ -26,9 +26,10 @@ Start a new Codex task after installation. Invoke
 improve.
 
 When invoked, the skill directs Codex to install pinned GEPA when needed and
-launch it with the bundled adapter first on `PATH`. Agentic runs require Linux,
-the Codex CLI, `jq`, and either `codex login`, `CODEX_API_KEY`, or
-`OPENAI_API_KEY`.
+launch it with the bundled adapter first on `PATH`. This plugin targets Codex
+CLI and Codex desktop. Agentic runs require Linux, Bubblewrap, the Codex CLI,
+`jq`, and either an isolated ChatGPT login or `CODEX_API_KEY`; in-process GEPA
+and `best_of_n` do not require that agentic jail.
 
 The adapter translates GEPA's upstream `claude-sonnet-4-6` default to
 `gpt-5.6-luna` with `high` reasoning. It also accepts the target model name
@@ -41,18 +42,47 @@ long-context multiplier; it is not provider billing.
 
 The compatibility command is Linux-only and uses GEPA's default Bubblewrap
 sandbox. Install Codex with
-`npm install --prefix "$HOME/.local" @openai/codex`, prepend
-`~/.local/node_modules/.bin` to `PATH`, set `CODEX_API_KEY`, and stage the
-adapter with `sandbox_runtime.py stage`. Run preflight before starting an
-agentic engine. Codex uses writable homes beneath `~/.cache`.
+`npm install --prefix "$HOME/.local" @openai/codex@0.146.0`, prepend
+`~/.local/node_modules/.bin` to `PATH`, and stage the adapter with
+`sandbox_runtime.py stage`. Unless you set `CODEX_API_KEY`, run
+`sandbox_runtime.py login` once to authenticate the staged runtime through
+ChatGPT. Export
+`CODEX_HOME="$HOME/.cache/gepa-optimize-anything-codex/codex"` and a unique
+`CODEX_ADAPTER_STATE_DIR` beneath
+`$HOME/.cache/gepa-optimize-anything-codex/runs`. Run preflight before starting
+an agentic engine.
 
 Do not set `max_token_cost` for `autoresearch` or `meta_harness`. GEPA sends it
 to the compatibility command as `--max-budget-usd`; the adapter rejects that
-flag before spawning Codex because it cannot enforce a USD ceiling. Use
-`max_evals`, `stop_at_score`, and a host-level timeout. Set an external spend
-limit in the OpenAI account before a paid run. That account-level control does
-not satisfy GEPA's per-invocation hard-budget contract. The `v1.0.0`
-hard-budget gate remains [externally blocked](HARD_BUDGET.md).
+flag before spawning Codex because it cannot enforce a USD ceiling.
+
+Callers must explicitly set the bounded GEPA configuration for Codex agentic
+runs:
+
+- `max_evals=10` for either agentic engine;
+- for `meta_harness`, `max_iterations=3` and
+  `max_candidates_per_iter=3`.
+
+The adapter alone enforces a default of four atomic starts per state directory.
+It retries once only when Codex is known not to have started. The retry consumes
+one of the four starts. Ambiguous, usage-bearing, and completed calls are never
+retried. Set `CODEX_ADAPTER_MAX_INVOCATIONS` to a different positive integer to
+override the adapter ceiling. Set
+`stop_at_score` whenever the metric has a known ceiling. A host timeout remains
+an optional emergency stop, not a default run budget.
+
+Set an external spend limit in the OpenAI account before a paid run. These
+controls complement the bounded work controls but are not per-invocation USD
+enforcement. The supported v1 contract is bounded work, not an exact dollar
+ceiling.
+
+The default sandbox does not expose the normal `~/.codex` login directory.
+`sandbox_runtime.py login`
+stores ChatGPT authentication in the isolated `CODEX_HOME` already mounted from
+`~/.cache`. `CODEX_API_KEY` remains the usage-based API alternative. An
+explicit `--no-sandbox` preflight is the opt-out path for hosts that
+intentionally use the normal Codex login. `OPENAI_API_KEY` remains available to
+GEPA's in-process models but is never translated into Codex authentication.
 
 The adapter accepts pinned GEPA's exact
 `--disallowedTools=WebFetch,WebSearch`, `--output-format json`, and
@@ -96,8 +126,9 @@ Do not set `max_token_cost`. For release dogfood, use a dedicated project hard
 limit and inspect each durable runner receipt before starting the next engine.
 A submitted call and its accounting can arrive after that check. This is an
 operational backstop, not per-invocation USD enforcement. Outside the release
-runner, set `CODEX_ADAPTER_MAX_INVOCATIONS` to a positive integer to apply the
-same fail-closed request-count guard to a unique adapter state directory.
+runner, the adapter defaults to four starts per unique state directory. Set
+`CODEX_ADAPTER_MAX_INVOCATIONS` to a positive integer to override that
+fail-closed request-count guard.
 
 ## Scope
 

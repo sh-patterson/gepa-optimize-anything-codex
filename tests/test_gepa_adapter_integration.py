@@ -105,7 +105,7 @@ print(json.dumps({
         objective="Write a candidate containing BLUE.",
         config=OptimizeAnythingConfig(
             engine="autoresearch",
-            max_evals=5,
+            max_evals=10,
             stop_at_score=1.0,
             sandbox=True,
             run_dir=str(tmp_path / "run"),
@@ -155,26 +155,30 @@ skill = Path(".claude/skills/gepa-optimize-anything-meta-harness/SKILL.md")
 assert skill.exists()
 assert "Write pending_eval.json" in skill.read_text(encoding="utf-8")
 assert "Follow the gepa-optimize-anything-meta-harness skill" in prompt
-candidate = Path("agents/iter1_blue.txt")
-candidate.write_text("Return BLUE.", encoding="utf-8")
-pending = Path("state/pending_eval_iter1.json")
-pending.write_text(json.dumps({
-    "iteration": 1,
-    "candidates": [{
-        "name": "blue",
+iteration = int(prompt.split("Run iteration ", 1)[1].split(" ", 1)[0])
+candidates = []
+for number in range(1, 4):
+    candidate = Path(f"agents/iter{iteration}_red_{number}.txt")
+    candidate.write_text("Return RED.", encoding="utf-8")
+    candidates.append({
+        "name": f"red-{iteration}-{number}",
         "file": str(candidate),
-        "hypothesis": "The required token will pass.",
-        "axis": "exploitation",
+        "hypothesis": "The candidate remains intentionally non-perfect.",
+        "axis": "exploration",
         "base": "baseline",
         "components": ["required-token"],
-    }],
+    })
+pending = Path(f"state/pending_eval_iter{iteration}.json")
+pending.write_text(json.dumps({
+    "iteration": iteration,
+    "candidates": candidates,
 }), encoding="utf-8")
 with (Path(os.environ["CODEX_ADAPTER_STATE_DIR"]) / "codex-invocations.jsonl").open("a", encoding="utf-8") as log:
     log.write(json.dumps(args) + "\\n")
-print(json.dumps({"type": "thread.started", "thread_id": "codex-thread-mh-1"}))
+print(json.dumps({"type": "thread.started", "thread_id": f"codex-thread-mh-{iteration}"}))
 print(json.dumps({
     "type": "item.completed",
-    "item": {"type": "agent_message", "text": "CANDIDATES: blue"},
+    "item": {"type": "agent_message", "text": "CANDIDATES: red"},
 }))
 print(json.dumps({
     "type": "turn.completed",
@@ -188,10 +192,9 @@ print(json.dumps({
     invocation_log = state_dir / "codex-invocations.jsonl"
 
     def evaluate(candidate: str) -> tuple[float, dict]:
-        passed = "BLUE" in candidate
-        return float(passed), {
-            "feedback": "Candidate must contain BLUE.",
-            "passed": passed,
+        return 0.0, {
+            "feedback": "Candidate is intentionally non-perfect.",
+            "passed": False,
         }
 
     result = optimize_anything(
@@ -200,14 +203,14 @@ print(json.dumps({
         objective="Write a candidate containing BLUE.",
         config=OptimizeAnythingConfig(
             engine="meta_harness",
-            max_evals=3,
-            stop_at_score=1.0,
+            max_evals=10,
+            stop_at_score=None,
             sandbox=True,
             run_dir=str(tmp_path / "run"),
             output_dir=str(tmp_path / "output"),
             engine_config={
-                "max_iterations": 1,
-                "max_candidates_per_iter": 1,
+                "max_iterations": 3,
+                "max_candidates_per_iter": 3,
             },
         ),
     )
@@ -216,11 +219,36 @@ print(json.dumps({
         json.loads(line)
         for line in invocation_log.read_text(encoding="utf-8").splitlines()
     ]
-    assert len(invocations) == 1
-    assert "resume" not in invocations[0]
-    assert result.best_candidate == "Return BLUE."
-    assert result.best_score == 1.0
-    assert result.total_evals == 2
+    assert len(invocations) == 3
+    assert all("resume" not in invocation for invocation in invocations)
+    assert all(
+        "Produce up to 3 candidate(s)." in invocation[-1]
+        for invocation in invocations
+    )
+    assert all("--max-budget-usd" not in invocation for invocation in invocations)
+    assert result.total_evals == 10
     assert result.metadata["adapter_cost"] > 0
-    assert result.metadata["meta_harness"]["stop_reason"] == "perfect_score"
-    assert len(list((state_dir / "sessions").glob("*.json"))) == 1
+    assert result.metadata["meta_harness"]["iterations_run"] == 3
+    assert result.metadata["meta_harness"]["stop_reason"] == "completed"
+    assert len(list((state_dir / "invocation-slots").iterdir())) == 3
+
+    invocation_records = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in (state_dir / "invocations").glob("*.json")
+    ]
+    assert len(invocation_records) == 3
+    assert {record["terminal_status"] for record in invocation_records} == {"completed"}
+    assert all(record["usage"]["input_tokens"] > 0 for record in invocation_records)
+    assert all(record["usage"]["output_tokens"] > 0 for record in invocation_records)
+
+    session_records = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in (state_dir / "sessions").glob("*.json")
+    ]
+    assert len(session_records) == 3
+    assert len({record["upstream_session_id"] for record in session_records}) == 3
+    assert {record["thread_id"] for record in session_records} == {
+        "codex-thread-mh-1",
+        "codex-thread-mh-2",
+        "codex-thread-mh-3",
+    }

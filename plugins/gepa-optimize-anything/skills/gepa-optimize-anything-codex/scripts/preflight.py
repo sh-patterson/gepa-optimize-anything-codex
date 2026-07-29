@@ -22,7 +22,14 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from sandbox_runtime import probe_runtime, runtime_paths, stage_runtime  # noqa: E402
+from sandbox_runtime import (  # noqa: E402
+    RuntimePaths,
+    probe_runtime,
+    runtime_environment,
+    runtime_paths,
+    stage_runtime,
+)
+from codex_claude_adapter import _max_adapter_invocations  # noqa: E402
 
 OK, BAD = "\033[32mOK\033[0m", "\033[31mFAIL\033[0m"
 problems: list[str] = []
@@ -31,6 +38,9 @@ problems: list[str] = []
 # sampling model defaults to claude-sonnet-4-6 (see references/api.md).
 DEFAULT_LM_BY_ENGINE = {"gepa": "openai/gpt-5.1", "best_of_n": "claude-sonnet-4-6"}
 EXPECTED_LAUNCHER = Path(__file__).with_name("claude").resolve()
+STAGED_LAUNCHER_RELATIVE = Path(
+    ".local/share/gepa-optimize-anything-codex/bin/claude"
+)
 REQUIRED_CODEX_EXEC_FLAGS = {
     "--ignore-user-config",
     "--json",
@@ -73,14 +83,13 @@ def _creds_for(lm: str) -> tuple[bool, str]:
     return any_key, "export your LiteLLM provider's API key"
 
 
-def _codex_auth_available(codex: str) -> tuple[bool, str]:
-    if os.environ.get("CODEX_API_KEY"):
-        return True, "CODEX_API_KEY"
-    if os.environ.get("OPENAI_API_KEY"):
-        return True, "OPENAI_API_KEY"
+def _codex_login_available(
+    codex: str, environment: dict[str, str] | None = None
+) -> tuple[bool, str]:
     try:
         proc = subprocess.run(
             [codex, "login", "status"],
+            env=environment,
             capture_output=True,
             text=True,
             timeout=10,
@@ -96,13 +105,30 @@ def _codex_auth_available(codex: str) -> tuple[bool, str]:
     )
 
 
-def _sandbox_auth_available() -> bool:
-    return bool(os.environ.get("CODEX_API_KEY"))
+def _codex_auth_available(codex: str) -> tuple[bool, str]:
+    if os.environ.get("CODEX_API_KEY"):
+        return True, "CODEX_API_KEY"
+    return _codex_login_available(codex)
+
+
+def _sandbox_auth_available(paths: RuntimePaths) -> tuple[bool, str]:
+    environment = runtime_environment(paths)
+    if environment.get("CODEX_API_KEY"):
+        return True, "CODEX_API_KEY"
+    return _codex_login_available(str(paths.codex), environment)
+
+
+def _configured_path_matches(name: str, expected: Path) -> bool:
+    configured = os.environ.get(name)
+    return bool(configured) and Path(configured).expanduser().resolve() == expected
 
 
 def _is_bundled_launcher(command: str) -> bool:
     try:
-        return Path(command).resolve() == EXPECTED_LAUNCHER
+        candidate = Path(command).resolve()
+        home = Path(os.environ.get("HOME", str(Path.home()))).expanduser()
+        staged = (home / STAGED_LAUNCHER_RELATIVE).resolve()
+        return candidate in {EXPECTED_LAUNCHER, staged}
     except OSError:
         return False
 
@@ -191,6 +217,18 @@ def main() -> int:
 
     # 3) agentic engines need the Codex-backed compatibility command.
     if a.engine in ("autoresearch", "meta_harness"):
+        try:
+            invocation_limit = _max_adapter_invocations()
+            check(
+                f"Codex adapter invocation cap is {invocation_limit}",
+                True,
+            )
+        except RuntimeError as exc:
+            check(
+                "Codex adapter invocation cap is valid",
+                False,
+                str(exc),
+            )
         check(
             "Linux host (the Codex compatibility command is Linux-only)",
             sys.platform.startswith("linux"),
@@ -219,7 +257,7 @@ def main() -> int:
             check(
                 "Codex auth configuration (API key or existing CLI login)",
                 codex_auth_ok,
-                "set CODEX_API_KEY/OPENAI_API_KEY or run `codex login`",
+                "set CODEX_API_KEY or run `codex login`",
             )
             if codex_auth_source:
                 print(f"      authenticated through {codex_auth_source}")
@@ -239,11 +277,6 @@ def main() -> int:
                 bool(shutil.which("bwrap")),
                 "install bubblewrap",
             )
-            check(
-                "CODEX_API_KEY is set for the sandboxed Codex runtime",
-                _sandbox_auth_available(),
-                "export CODEX_API_KEY",
-            )
             paths = None
             try:
                 paths = stage_runtime(runtime_paths())
@@ -253,6 +286,26 @@ def main() -> int:
             except (OSError, RuntimeError) as exc:
                 check("sandbox runtime is staged under ~/.local", False, str(exc))
             if paths is not None:
+                check(
+                    "CODEX_HOME points to the staged runtime home",
+                    _configured_path_matches("CODEX_HOME", paths.codex_home),
+                    f'export CODEX_HOME="{paths.codex_home}"',
+                )
+                check(
+                    "CODEX_ADAPTER_STATE_DIR points to this staged run",
+                    _configured_path_matches(
+                        "CODEX_ADAPTER_STATE_DIR", paths.state_dir
+                    ),
+                    f'export CODEX_ADAPTER_STATE_DIR="{paths.state_dir}"',
+                )
+                codex_auth_ok, codex_auth_source = _sandbox_auth_available(paths)
+                check(
+                    "Sandbox Codex auth (CODEX_API_KEY or staged CLI login)",
+                    codex_auth_ok,
+                    "run `sandbox_runtime.py login` or export CODEX_API_KEY",
+                )
+                if codex_auth_source:
+                    print(f"      authenticated through {codex_auth_source}")
                 codex_surface_ok, codex_surface_problem = _codex_exec_surface(
                     str(paths.codex)
                 )

@@ -33,27 +33,30 @@ jobs:
           CLEAN_ROOT="$RUNNER_TEMP/gepa-clean-install"
           VENV="$CLEAN_ROOT/venv"
           export HOME="$CLEAN_ROOT/home"
-          export CODEX_HOME="$CLEAN_ROOT/codex-home"
-          mkdir -p "$HOME" "$CODEX_HOME" "$VENV" "$CLEAN_ROOT/marketplace"
+          export CODEX_HOME="$HOME/.cache/gepa-optimize-anything-codex/codex"
+          export CODEX_ADAPTER_STATE_DIR="$HOME/.cache/gepa-optimize-anything-codex/runs/ci"
+          mkdir -p "$HOME" "$CODEX_HOME" "$CODEX_ADAPTER_STATE_DIR" "$VENV" "$CLEAN_ROOT/marketplace"
           python -m venv "$VENV"
           "$VENV/bin/python" -m pip install --upgrade pip
           "$VENV/bin/python" -m pip install --no-cache-dir ".[dev,live]"
           git archive --format=tar HEAD | tar -x -C "$CLEAN_ROOT/marketplace"
           test -f "$CLEAN_ROOT/marketplace/.agents/plugins/marketplace.json"
-          npm install --prefix "$HOME/.local" @openai/codex@0.144.6
+          npm install --prefix "$HOME/.local" @openai/codex@0.146.0
           export PATH="$HOME/.local/node_modules/.bin:$PATH"
-          codex --version | grep -F "0.144.6"
+          codex --version | grep -F "0.146.0"
           codex plugin marketplace add "$CLEAN_ROOT/marketplace" --json | tee "$CLEAN_ROOT/marketplace-add.json"
           codex plugin add gepa-optimize-anything@gepa-optimize-anything-codex --json | tee "$CLEAN_ROOT/plugin-add.json"
           codex plugin list --json | tee "$CLEAN_ROOT/plugin-list.json"
           test "$(jq -r '.marketplaceName' "$CLEAN_ROOT/marketplace-add.json")" = "gepa-optimize-anything-codex"
           INSTALLED_PLUGIN="$(jq -er '.installedPath' "$CLEAN_ROOT/plugin-add.json")"
           test "$(jq -r '.name' "$CLEAN_ROOT/plugin-add.json")" = "gepa-optimize-anything"
-          test "$(jq -r '.version' "$CLEAN_ROOT/plugin-add.json")" = "0.3.0"
-          jq -e 'any(.installed[]; .name == "gepa-optimize-anything" and .installed == true and .enabled == true and .version == "0.3.0")' "$CLEAN_ROOT/plugin-list.json" > /dev/null
+          test "$(jq -r '.version' "$CLEAN_ROOT/plugin-add.json")" = "0.3.1"
+          jq -e 'any(.installed[]; .name == "gepa-optimize-anything" and .installed == true and .enabled == true and .version == "0.3.1")' "$CLEAN_ROOT/plugin-list.json" > /dev/null
           INSTALLED_PLUGIN="$(readlink -f "$INSTALLED_PLUGIN")"
           INSTALLED_SKILL="$INSTALLED_PLUGIN/skills/gepa-optimize-anything-codex"
           test -f "$INSTALLED_PLUGIN/.codex-plugin/plugin.json"
+          test -f "$INSTALLED_PLUGIN/LICENSE"
+          test -f "$INSTALLED_PLUGIN/UPSTREAM.md"
           test -f "$INSTALLED_SKILL/SKILL.md"
           for source in "$CLEAN_ROOT/marketplace" "$GITHUB_WORKSPACE"; do
             source="$(readlink -f "$source")"
@@ -62,6 +65,7 @@ jobs:
           {
             echo "HOME=$HOME"
             echo "CODEX_HOME=$CODEX_HOME"
+            echo "CODEX_ADAPTER_STATE_DIR=$CODEX_ADAPTER_STATE_DIR"
             echo "GEPA_CODEX_SKILL_DIR=$INSTALLED_SKILL"
             echo "CLEAN_VENV=$VENV"
           } >> "$GITHUB_ENV"

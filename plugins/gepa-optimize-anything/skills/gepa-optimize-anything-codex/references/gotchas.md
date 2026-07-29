@@ -43,14 +43,19 @@ block, and old-API keys (`claude_code_agent`, top-level `reflection_lm_kwargs`, 
 `background` inside `engine_config`) now crash. See `api.md` for each backend's valid keys.
 
 ## 6. Agentic backends have launch-time prerequisites
-`autoresearch` / `meta_harness` `subprocess.Popen(["claude", ...])`. A missing `claude` CLI — or, on
-Linux, a missing `bwrap` (bubblewrap) while the default `sandbox=True` is in effect — aborts the run
-at launch with a boxed message and install instructions (`npm install -g @anthropic-ai/claude-code`;
-`sudo apt/dnf install bubblewrap`). An *unauthenticated* CLI or a missing `jq` (used by
-autoresearch's generated `eval.sh`) still surfaces only mid-run. An explicit `--no-sandbox` run is
-unconfined (loud warning) — so run `scripts/preflight.py` first either way.
+`autoresearch` / `meta_harness` invoke a command named `claude`. This port stages that compatibility
+launcher inside GEPA's Bubblewrap jail and invokes Codex. A missing staged launcher, Codex CLI,
+`bwrap`, `jq`, or sandbox authentication fails preflight before the optimizer starts. An explicit
+`--no-sandbox` run is unconfined (loud warning); run
+`python "$SKILL_DIR/scripts/preflight.py" --engine <engine>` first either way.
 
-## 7. Give runs a real stop condition (`stop_at_score` / `max_token_cost`)
+## 7. Give runs a real stop condition (`stop_at_score` / bounded work)
+
+Sandboxed agentic runs require either `CODEX_API_KEY` or a ChatGPT login created
+with `sandbox_runtime.py login` in the isolated runtime home. A normal
+`~/.codex` login remains available only to explicit `--no-sandbox` runs.
+`OPENAI_API_KEY` is reserved for GEPA's in-process models and is not translated
+into Codex authentication.
 `max_evals` caps eval calls, but two situations still burn money or time past the point of useful
 work:
 - **The metric has a ceiling** and a candidate reaches it — without `stop_at_score` the run keeps
@@ -62,8 +67,12 @@ work:
   times out, still spending proposer-LLM tokens. With caching on, `stop_at_score` and/or a compatible
   cost or wall-clock bound are mandatory.
 This Codex adapter rejects agentic `max_token_cost` because it cannot enforce GEPA's
-`--max-budget-usd` contract. Use `max_evals`, `stop_at_score`, a host timeout, and an account spend
-limit.
+`--max-budget-usd` contract. Callers must explicitly set `max_evals=10` for Codex agentic runs;
+for `meta_harness`, also set `max_iterations=3` and `max_candidates_per_iter=3`. The adapter alone
+enforces a default of four atomic starts per state directory and retries once only when Codex is
+known not to have started. The retry consumes a start; ambiguous or usage-bearing calls are never
+retried. Use an account spend
+limit as a secondary backstop. A host timeout is optional rather than the default work budget.
 
 ## 8. Pick the right mode
 The mode is implicit in which sets you pass (`api.md`): no `dataset`/`valset` → single-task;
@@ -110,4 +119,7 @@ your evaluator stops the whole optimization. Either catch failures yourself and 
 - [ ] `run_dir` + `output_dir` set (so artifacts persist)
 - [ ] `test_set` passed if you need an unbiased number to report
 - [ ] for agentic backends: Codex adapter `claude` on PATH + Codex auth, `jq` installed, and
-      a passing Bubblewrap preflight with `CODEX_API_KEY`
+      a passing Bubblewrap preflight with staged ChatGPT login or `CODEX_API_KEY`
+- [ ] for Codex agentic backends: explicitly set `max_evals=10`; for `meta_harness`, set
+      `max_iterations=3` and `max_candidates_per_iter=3`; use unique adapter state so its
+      four-start cap is meaningful

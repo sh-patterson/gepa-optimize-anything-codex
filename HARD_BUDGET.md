@@ -1,13 +1,13 @@
-# Hard-budget status
+# Agentic spend-control contract
 
-Status: externally blocked as of 2026-07-28.
+Status: bounded-work policy adopted for v1.
 
 GEPA's `--max-budget-usd` contract requires two provider guarantees:
 
 1. A USD ceiling enforced for one Codex invocation.
 2. A provider-originated cost receipt for that invocation.
 
-Codex CLI `0.144.6` provides neither guarantee. `codex exec` has no USD-budget
+Codex CLI `0.146.0` provides neither guarantee. `codex exec` has no USD-budget
 option. Its JSONL completion event reports token usage, not billed cost. The
 Responses API has token limits and usage fields but no per-request USD ceiling
 or billed-cost field.
@@ -16,25 +16,21 @@ OpenAI organization and project spend limits are cumulative controls. They do
 not bind one invocation. The organization Cost API requires an admin key and
 returns costs in daily buckets, so it is not a terminal per-invocation receipt.
 
-The adapter therefore continues to reject `--max-budget-usd` before spawning
-Codex. A release runner may apply a project hard limit from durable receipts as
-an operational backstop before it starts a later invocation. That control can
-lag a submitted call and its accounting, so it does not satisfy GEPA's
-per-invocation hard-budget contract. A paid termination probe would still be
-unbounded by the requested contract and must not run. Revisit this decision only
-when Codex exposes both guarantees.
+The adapter therefore rejects `--max-budget-usd` before spawning Codex. Project
+limits remain an optional operational backstop, but their delayed accounting
+does not satisfy GEPA's per-invocation hard-budget contract.
 
-## v0.3.0 beta decision
+## Supported v1 policy
 
-The installed Luna-high dogfood was deferred without making a paid call. The
-beta relies on free Bubblewrap integration and clean-install proof. Its release
-runner limits each engine to one proposer iteration, three evaluations, a
-600-second deadline, one adapter invocation, and zero retries. Engines must run
-serially.
+The Codex agentic engines promise bounded work, not a provider-enforced dollar
+ceiling. Callers must set evaluation and proposer bounds. The adapter enforces
+an atomic invocation-start cap and retries only a failure known to have occurred
+before Codex started. It never retries an ambiguous, usage-bearing, or completed
+call. A host timeout is an optional emergency stop rather than a default budget.
 
-These controls bound work and duration; they do not enforce a USD ceiling.
-Installed live dogfood remains an explicit release limitation until a
-provider-enforced limit is configured or Codex exposes a per-invocation control.
+The release dogfood is stricter: one proposer iteration, three evaluations, one
+adapter invocation, zero retries, and serial engines. Its token-derived cost is
+evidence and reconciliation metadata, not a billing receipt.
 
 Evidence:
 
