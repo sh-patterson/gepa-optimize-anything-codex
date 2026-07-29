@@ -154,11 +154,11 @@ def test_provenance_reads_installed_manifest_and_commit_sources(
     (skill / "SKILL.md").write_text("# installed\n", encoding="utf-8")
     manifest = skill.parents[1] / ".codex-plugin" / "plugin.json"
     manifest.parent.mkdir()
-    manifest.write_text('{"version":"1.0.0"}\n', encoding="utf-8")
+    manifest.write_text('{"version":"1.0.1"}\n', encoding="utf-8")
     monkeypatch.setattr(evidence, "git_commit", lambda _root: "a" * 40)
     monkeypatch.setattr(evidence, "installed_vcs_commit", lambda _package: "b" * 40)
 
-    actual = evidence.installed_provenance(skill, repository_root, "1.0.0")
+    actual = evidence.installed_provenance(skill, repository_root, "1.0.1")
 
     assert actual["plugin_manifest"] == str(manifest)
     assert actual["repository_commit"] == "a" * 40
@@ -191,11 +191,11 @@ def test_installed_provenance_rejects_invalid_plugin_boundaries(
     if setup not in {"missing_manifest", "checkout", "missing_skill", "legacy_driver"}:
         manifest = skill.parents[1] / ".codex-plugin" / "plugin.json"
         manifest.parent.mkdir()
-        version = "9.9.9" if setup == "wrong_version" else "1.0.0"
+        version = "9.9.9" if setup == "wrong_version" else "1.0.1"
         manifest.write_text(json.dumps({"version": version}), encoding="utf-8")
 
     with pytest.raises(RuntimeError, match=error):
-        evidence.installed_provenance(skill, repository_root, "1.0.0")
+        evidence.installed_provenance(skill, repository_root, "1.0.1")
 
 
 @pytest.mark.parametrize(

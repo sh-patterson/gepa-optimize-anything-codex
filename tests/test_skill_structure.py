@@ -70,7 +70,7 @@ def test_package_and_plugin_versions_match():
         (PLUGIN / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8")
     )
 
-    assert pyproject["project"]["version"] == "1.0.0"
+    assert pyproject["project"]["version"] == "1.0.1"
     assert manifest["version"] == pyproject["project"]["version"]
     assert pyproject["tool"]["setuptools"]["packages"] == []
 
