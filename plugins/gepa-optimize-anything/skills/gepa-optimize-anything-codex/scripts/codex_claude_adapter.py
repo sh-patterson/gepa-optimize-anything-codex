@@ -503,6 +503,10 @@ def invoke_codex(request: AgentRequest) -> CodexRun:
         command = _codex_command(request, codex, resumed_thread)
         child_env = scrubbed_env()
         api_key = os.environ.get("CODEX_API_KEY")
+        if os.environ.get("CODEX_ADAPTER_AUTH_MODE") == "chatgpt_login" and any(
+            os.environ.get(name) for name in ("CODEX_API_KEY", "OPENAI_API_KEY")
+        ):
+            raise RuntimeError("staged-login proof cannot expose API keys")
         if api_key:
             child_env["CODEX_API_KEY"] = api_key
         for attempt in range(PRE_SUBMISSION_RETRIES + 1):

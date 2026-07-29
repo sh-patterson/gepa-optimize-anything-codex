@@ -16,15 +16,15 @@ RELEASE_DOGFOOD = ROOT / "scripts" / "release_dogfood.py"
 
 @pytest.mark.live
 @pytest.mark.skipif(
-    os.environ.get("RUN_CODEX_AGENT_SMOKE") != "1",
-    reason="requires paid GEPA and Codex calls",
+    os.environ.get("RUN_CODEX_LIVE") != "1",
+    reason="requires live GEPA and Codex calls",
 )
 @pytest.mark.parametrize("engine", ("autoresearch", "meta_harness"))
 def test_release_dogfood_improves_a_deterministic_text_candidate(engine: str) -> None:
     proc = subprocess.run(
         [sys.executable, str(RELEASE_DOGFOOD), "--engine", engine],
         cwd=ROOT,
-        env={**os.environ, "RUN_CODEX_AGENT_SMOKE": "1"},
+        env={**os.environ, "RUN_CODEX_LIVE": "1"},
         capture_output=True,
         text=True,
         timeout=700,
@@ -39,8 +39,8 @@ def test_release_dogfood_improves_a_deterministic_text_candidate(engine: str) ->
     assert receipt["policy"]["reasoning_effort"] == "high"
     assert receipt["policy"]["sandbox"] is True
     assert receipt["source"]["sandbox_runtime"] == "bubblewrap"
-    assert receipt["result"]["seed_candidate"] == "Return RED."
-    assert "BLUE" in receipt["result"]["best_candidate"]
+    assert receipt["schema_version"] == 2
+    assert receipt["result"]["improved"] is True
     assert receipt["result"]["best_score"] == 1.0
     assert receipt["result"]["total_evals"] >= 2
     assert sum(receipt["usage"].values()) > 0
@@ -48,6 +48,9 @@ def test_release_dogfood_improves_a_deterministic_text_candidate(engine: str) ->
     assert receipt["cost"]["adapter_reported_usd"] > 0
     assert receipt["cost"]["agreement"]
     assert receipt["session_mapping"]
+    assert receipt["provenance"]["installed_plugin"] is True
+    assert receipt["authentication"]["mode"] == "chatgpt_login"
+    assert receipt["authentication"]["child_api_keys_present"] is False
     assert all(
         mapping["upstream_session_id"] and mapping["codex_thread_id"]
         for mapping in receipt["session_mapping"]

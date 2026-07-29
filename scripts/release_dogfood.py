@@ -11,6 +11,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import tomllib
 import uuid
 from pathlib import Path
 from typing import Any, Callable
@@ -23,6 +24,8 @@ TARGET_CANDIDATE = "Return BLUE."
 TARGET_MODEL = "gpt-5.6-luna"
 REASONING_EFFORT = "high"
 MAX_ADAPTER_INVOCATIONS = 1
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+API_KEY_NAMES = ("CODEX_API_KEY", "OPENAI_API_KEY")
 REQUIRED_INVOCATION_FIELDS = frozenset(
     {
         "schema_version",
@@ -239,6 +242,7 @@ def build_receipt(
     file_paths: dict[str, Path],
     commits: dict[str, str],
     version: str,
+    authentication_mode: str,
 ) -> dict[str, Any]:
     records = invocation_records(state_dir)
     usage: dict[str, int] = {}
@@ -285,15 +289,34 @@ def build_receipt(
     )
     if not agreement:
         raise ValueError("journal, returned, and persisted costs do not agree")
+    if authentication_mode not in {"chatgpt_login", "codex_api_key"}:
+        raise ValueError("invalid authentication mode")
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "status": "success",
         "engine": engine,
         "policy": release_policy(engine),
         "commits": commits,
-        "version": version,
+        "versions": {
+            "plugin": version,
+            "gepa": source.get("gepa_version"),
+        },
+        "provenance": {
+            "installed_plugin": source.get("skill_source") == "installed_plugin",
+            "skill_path": source.get("skill_path"),
+            "plugin_manifest": source.get("plugin_manifest"),
+        },
+        "authentication": {
+            "mode": authentication_mode,
+            "child_api_keys_present": False,
+            "credentials_recorded": False,
+        },
         "source": source,
-        "result": {key: value for key, value in result.items() if key != "metadata"},
+        "result": {
+            "improved": result["best_score"] == 1.0,
+            "best_score": result["best_score"],
+            "total_evals": result["total_evals"],
+        },
         "usage": usage,
         "cost": {
             "estimated_usd": estimated_cost,
@@ -304,6 +327,11 @@ def build_receipt(
             "agreement": agreement,
         },
         "sandbox": {"enabled": True, "runtime": "bubblewrap"},
+        "terminal": {
+            "status": records[0]["terminal_status"],
+            "return_code": records[0]["return_code"],
+            "ambiguous_retry": False,
+        },
         "session_mapping": [
             {
                 "upstream_session_id": record["upstream_session_id"],
@@ -335,13 +363,6 @@ def _git_commit(path: Path) -> str:
     return commit
 
 
-def _optional_git_commit(path: Path) -> str | None:
-    try:
-        return _git_commit(_repository_root(path))
-    except RuntimeError:
-        return None
-
-
 def _repository_root(path: Path) -> Path:
     current = path.resolve()
     for candidate in (current, *current.parents):
@@ -350,19 +371,42 @@ def _repository_root(path: Path) -> Path:
     raise RuntimeError(f"no repository root for {path}")
 
 
+def _project_version() -> str:
+    with (REPOSITORY_ROOT / "pyproject.toml").open("rb") as source:
+        return str(tomllib.load(source)["project"]["version"])
+
+
+def _is_within(path: Path, parent: Path) -> bool:
+    try:
+        path.relative_to(parent)
+    except ValueError:
+        return False
+    return True
+
+
 def skill_dir() -> Path:
     configured = os.environ.get("GEPA_CODEX_SKILL_DIR")
-    fallback = (
-        Path(__file__).resolve().parents[1]
-        / "plugins"
-        / "gepa-optimize-anything"
-        / "skills"
-        / "gepa-optimize-anything-codex"
-    )
-    selected = Path(configured).expanduser().resolve() if configured else fallback
+    if not configured:
+        raise RuntimeError("release dogfood requires GEPA_CODEX_SKILL_DIR")
+    selected = Path(configured).expanduser().resolve()
+    if _is_within(selected, REPOSITORY_ROOT):
+        raise RuntimeError("release dogfood requires an installed plugin")
     if not (selected / "SKILL.md").is_file():
         raise RuntimeError("GEPA Codex skill directory is missing SKILL.md")
+    plugin_manifest = selected.parents[1] / ".codex-plugin" / "plugin.json"
+    try:
+        plugin_data = json.loads(plugin_manifest.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError("installed plugin manifest is missing or invalid") from exc
+    if plugin_data.get("version") != _project_version():
+        raise RuntimeError("installed plugin version does not match the runner")
     return selected
+
+
+def authentication_mode(environment: dict[str, str]) -> str:
+    if environment.get("CODEX_API_KEY"):
+        return "codex_api_key"
+    return "chatgpt_login"
 
 
 def _load_module(name: str, path: Path) -> Any:
@@ -389,6 +433,12 @@ def stage_and_preflight(
         )
     environment = runtime.runtime_environment(paths)
     environment["CODEX_ADAPTER_MAX_INVOCATIONS"] = str(MAX_ADAPTER_INVOCATIONS)
+    mode = authentication_mode(environment)
+    if mode == "chatgpt_login":
+        present = [name for name in API_KEY_NAMES if environment.get(name)]
+        if present:
+            raise RuntimeError("staged-login proof cannot expose API keys")
+        environment["CODEX_ADAPTER_AUTH_MODE"] = mode
     preflight = subprocess.run(
         [sys.executable, str(skill / "scripts" / "preflight.py"), "--engine", engine],
         env=environment,
@@ -515,7 +565,7 @@ def _failure_receipt(
     source: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], Path]:
     receipt = {
-        "schema_version": 1,
+        "schema_version": 2,
         "status": status,
         "engine": engine,
         "policy": release_policy(engine),
@@ -549,18 +599,21 @@ def run_release(
         if not isinstance(skill_version, str) or not skill_version:
             raise ValueError("selected plugin version is missing")
         gepa_module = Path(gepa.__file__).resolve()
+        release_commit = _git_commit(REPOSITORY_ROOT)
         source = {
             "gepa_module": str(gepa_module),
             "gepa_version": gepa_version,
             "gepa_commit": _git_commit(_repository_root(gepa_module)),
             "skill_path": str(skill),
             "skill_version": skill_version,
-            "skill_commit": _optional_git_commit(skill),
-            "skill_source": "environment"
-            if "GEPA_CODEX_SKILL_DIR" in os.environ
-            else "repo_fallback",
+            "plugin_commit": release_commit,
+            "skill_source": "installed_plugin",
+            "plugin_manifest": str(plugin),
             **staged,
         }
+        auth_mode = authentication_mode(environment)
+        if skill_version == "0.3.1" and auth_mode != "chatgpt_login":
+            raise ValueError("v0.3.1 release proof requires staged ChatGPT login")
         manifest = root / "run_manifest.json"
         _atomic_json(manifest, {"policy": release_policy(engine), "source": source})
         result_path = root / "child_result.json"
@@ -606,11 +659,12 @@ def run_release(
             summary=summary,
             file_paths=files,
             commits={
-                "runner": _git_commit(_repository_root(Path(__file__))),
+                "runner": release_commit,
                 "gepa": source["gepa_commit"],
-                "selected_skill": source["skill_commit"],
+                "plugin": source["plugin_commit"],
             },
             version=str(source["skill_version"]),
+            authentication_mode=auth_mode,
         )
         path = persist_receipt(root / "output", receipt)
         receipt["receipt_path"] = str(path)
@@ -637,8 +691,8 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    if os.environ.get("RUN_CODEX_AGENT_SMOKE") != "1":
-        print("release dogfood requires RUN_CODEX_AGENT_SMOKE=1", file=sys.stderr)
+    if os.environ.get("RUN_CODEX_LIVE") != "1":
+        print("release dogfood requires RUN_CODEX_LIVE=1", file=sys.stderr)
         return 2
     receipt, _receipt_path = run_release(args.engine)
     print(json.dumps(receipt, sort_keys=True))

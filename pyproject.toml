@@ -16,7 +16,7 @@ live = [
 ]
 [tool.pytest.ini_options]
 markers = [
-  "live: makes a paid Codex API call",
+  "live: makes a live model call",
 ]
 
 [tool.setuptools]
