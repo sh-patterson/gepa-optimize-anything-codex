@@ -162,6 +162,8 @@ def scrubbed_env() -> dict[str, str]:
         "ANTHROPIC_API_KEY",
         "ANTHROPIC_AUTH_TOKEN",
         "CLAUDE_CODE_OAUTH_TOKEN",
+        "CODEX_API_KEY",
+        "OPENAI_API_KEY",
     }
     return {
         name: value
@@ -500,7 +502,7 @@ def invoke_codex(request: AgentRequest) -> CodexRun:
         )
         command = _codex_command(request, codex, resumed_thread)
         child_env = scrubbed_env()
-        api_key = os.environ.get("CODEX_API_KEY") or os.environ.get("OPENAI_API_KEY")
+        api_key = os.environ.get("CODEX_API_KEY")
         if api_key:
             child_env["CODEX_API_KEY"] = api_key
         for attempt in range(PRE_SUBMISSION_RETRIES + 1):

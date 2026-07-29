@@ -28,8 +28,8 @@ improve.
 When invoked, the skill directs Codex to install pinned GEPA when needed and
 launch it with the bundled adapter first on `PATH`. This plugin targets Codex
 CLI and Codex desktop. Agentic runs require Linux, Bubblewrap, the Codex CLI,
-`jq`, and `CODEX_API_KEY`; in-process GEPA and `best_of_n` do not require that
-agentic jail.
+`jq`, and either an isolated ChatGPT login or `CODEX_API_KEY`; in-process GEPA
+and `best_of_n` do not require that agentic jail.
 
 The adapter translates GEPA's upstream `claude-sonnet-4-6` default to
 `gpt-5.6-luna` with `high` reasoning. It also accepts the target model name
@@ -43,9 +43,14 @@ long-context multiplier; it is not provider billing.
 The compatibility command is Linux-only and uses GEPA's default Bubblewrap
 sandbox. Install Codex with
 `npm install --prefix "$HOME/.local" @openai/codex@0.146.0`, prepend
-`~/.local/node_modules/.bin` to `PATH`, set `CODEX_API_KEY`, and stage the
-adapter with `sandbox_runtime.py stage`. Run preflight before starting an
-agentic engine. Codex uses writable homes beneath `~/.cache`.
+`~/.local/node_modules/.bin` to `PATH`, and stage the adapter with
+`sandbox_runtime.py stage`. Unless you set `CODEX_API_KEY`, run
+`sandbox_runtime.py login` once to authenticate the staged runtime through
+ChatGPT. Export
+`CODEX_HOME="$HOME/.cache/gepa-optimize-anything-codex/codex"` and a unique
+`CODEX_ADAPTER_STATE_DIR` beneath
+`$HOME/.cache/gepa-optimize-anything-codex/runs`. Run preflight before starting
+an agentic engine.
 
 Do not set `max_token_cost` for `autoresearch` or `meta_harness`. GEPA sends it
 to the compatibility command as `--max-budget-usd`; the adapter rejects that
@@ -71,10 +76,13 @@ controls complement the bounded work controls but are not per-invocation USD
 enforcement. The supported v1 contract is bounded work, not an exact dollar
 ceiling.
 
-The default sandbox cannot use a normal `codex login` token or an
-`OPENAI_API_KEY`, because those credentials are outside the jail. An explicit
-`--no-sandbox` preflight is the opt-out path for hosts that intentionally use
-those credentials.
+The default sandbox does not expose the normal `~/.codex` login directory.
+`sandbox_runtime.py login`
+stores ChatGPT authentication in the isolated `CODEX_HOME` already mounted from
+`~/.cache`. `CODEX_API_KEY` remains the usage-based API alternative. An
+explicit `--no-sandbox` preflight is the opt-out path for hosts that
+intentionally use the normal Codex login. `OPENAI_API_KEY` remains available to
+GEPA's in-process models but is never translated into Codex authentication.
 
 The adapter accepts pinned GEPA's exact
 `--disallowedTools=WebFetch,WebSearch`, `--output-format json`, and

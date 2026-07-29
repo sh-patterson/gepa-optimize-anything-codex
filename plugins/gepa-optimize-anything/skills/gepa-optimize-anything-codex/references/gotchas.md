@@ -51,8 +51,11 @@ launcher inside GEPA's Bubblewrap jail and invokes Codex. A missing staged launc
 
 ## 7. Give runs a real stop condition (`stop_at_score` / bounded work)
 
-Sandboxed agentic runs require `CODEX_API_KEY`; only explicit
-`--no-sandbox` runs may rely on `codex login` or `OPENAI_API_KEY`.
+Sandboxed agentic runs require either `CODEX_API_KEY` or a ChatGPT login created
+with `sandbox_runtime.py login` in the isolated runtime home. A normal
+`~/.codex` login remains available only to explicit `--no-sandbox` runs.
+`OPENAI_API_KEY` is reserved for GEPA's in-process models and is not translated
+into Codex authentication.
 `max_evals` caps eval calls, but two situations still burn money or time past the point of useful
 work:
 - **The metric has a ceiling** and a candidate reaches it — without `stop_at_score` the run keeps
@@ -116,7 +119,7 @@ your evaluator stops the whole optimization. Either catch failures yourself and 
 - [ ] `run_dir` + `output_dir` set (so artifacts persist)
 - [ ] `test_set` passed if you need an unbiased number to report
 - [ ] for agentic backends: Codex adapter `claude` on PATH + Codex auth, `jq` installed, and
-      a passing Bubblewrap preflight with `CODEX_API_KEY`
+      a passing Bubblewrap preflight with staged ChatGPT login or `CODEX_API_KEY`
 - [ ] for Codex agentic backends: explicitly set `max_evals=10`; for `meta_harness`, set
       `max_iterations=3` and `max_candidates_per_iter=3`; use unique adapter state so its
       four-start cap is meaningful

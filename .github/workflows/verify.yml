@@ -33,8 +33,9 @@ jobs:
           CLEAN_ROOT="$RUNNER_TEMP/gepa-clean-install"
           VENV="$CLEAN_ROOT/venv"
           export HOME="$CLEAN_ROOT/home"
-          export CODEX_HOME="$CLEAN_ROOT/codex-home"
-          mkdir -p "$HOME" "$CODEX_HOME" "$VENV" "$CLEAN_ROOT/marketplace"
+          export CODEX_HOME="$HOME/.cache/gepa-optimize-anything-codex/codex"
+          export CODEX_ADAPTER_STATE_DIR="$HOME/.cache/gepa-optimize-anything-codex/runs/ci"
+          mkdir -p "$HOME" "$CODEX_HOME" "$CODEX_ADAPTER_STATE_DIR" "$VENV" "$CLEAN_ROOT/marketplace"
           python -m venv "$VENV"
           "$VENV/bin/python" -m pip install --upgrade pip
           "$VENV/bin/python" -m pip install --no-cache-dir ".[dev,live]"
@@ -64,6 +65,7 @@ jobs:
           {
             echo "HOME=$HOME"
             echo "CODEX_HOME=$CODEX_HOME"
+            echo "CODEX_ADAPTER_STATE_DIR=$CODEX_ADAPTER_STATE_DIR"
             echo "GEPA_CODEX_SKILL_DIR=$INSTALLED_SKILL"
             echo "CLEAN_VENV=$VENV"
           } >> "$GITHUB_ENV"

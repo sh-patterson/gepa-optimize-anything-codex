@@ -144,6 +144,15 @@ def runtime_environment(
     return environment
 
 
+def login_runtime(paths: RuntimePaths) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [str(paths.codex), "login"],
+        cwd=paths.home,
+        env=runtime_environment(paths),
+        check=False,
+    )
+
+
 def _probe_script() -> str:
     return """
 import importlib.util
@@ -169,6 +178,14 @@ help_result = subprocess.run(
     check=False,
 )
 assert help_result.returncode == 0, help_result.stderr
+if not os.environ.get("CODEX_API_KEY"):
+    login_result = subprocess.run(
+        [os.environ["CODEX_CLI"], "login", "status"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert login_result.returncode == 0, login_result.stderr
 for name in ("CODEX_HOME", "CODEX_ADAPTER_STATE_DIR"):
     directory = Path(os.environ[name])
     directory.mkdir(parents=True, exist_ok=True)
@@ -200,10 +217,14 @@ def probe_runtime(paths: RuntimePaths) -> subprocess.CompletedProcess[str]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", nargs="?", choices=["stage", "probe"], default="stage")
+    parser.add_argument(
+        "command", nargs="?", choices=["stage", "login", "probe"], default="stage"
+    )
     args = parser.parse_args(argv)
     try:
         paths = stage_runtime(runtime_paths())
+        if args.command == "login":
+            return login_runtime(paths).returncode
         if args.command == "probe":
             result = probe_runtime(paths)
             if result.returncode != 0:

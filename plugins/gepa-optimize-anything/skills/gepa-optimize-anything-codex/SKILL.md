@@ -16,17 +16,18 @@ For every `autoresearch` or `meta_harness` run:
 
 1. Resolve `SKILL_DIR` to the absolute directory containing this `SKILL.md`. Use the installed skill path supplied by Codex. Do not ask the user to find the plugin cache.
 2. Install pinned GEPA if the active Python environment does not already provide it.
-3. Run `npm install --prefix "$HOME/.local" @openai/codex@0.146.0`, prepend `"$HOME/.local/node_modules/.bin"` to `PATH`, and set `CODEX_API_KEY`.
+3. Run `npm install --prefix "$HOME/.local" @openai/codex@0.146.0` and prepend `"$HOME/.local/node_modules/.bin"` to `PATH`.
 4. Stage the adapter with `RUNTIME_BIN="$(python "$SKILL_DIR/scripts/sandbox_runtime.py" stage)"`.
-5. Prepend `RUNTIME_BIN` to `PATH`. Set `CODEX_HOME` and a unique `CODEX_ADAPTER_STATE_DIR` beneath `~/.cache/gepa-optimize-anything-codex`.
-6. Run `"$SKILL_DIR/scripts/preflight.py" --engine <engine>`.
-7. Launch the user's Python program with `sandbox=True`.
+5. Unless `CODEX_API_KEY` is set, run `python "$SKILL_DIR/scripts/sandbox_runtime.py" login` once to authenticate the isolated runtime through ChatGPT.
+6. Prepend `RUNTIME_BIN` to `PATH`. Set `CODEX_HOME="$HOME/.cache/gepa-optimize-anything-codex/codex"` and a unique `CODEX_ADAPTER_STATE_DIR` beneath `~/.cache/gepa-optimize-anything-codex/runs`.
+7. Run `"$SKILL_DIR/scripts/preflight.py" --engine <engine>`.
+8. Launch the user's Python program with `sandbox=True`.
 
 ## Codex adapter limits
 
-The agentic compatibility command supports Linux only. Keep GEPA's default `sandbox=True`. Staging puts the adapter under Bubblewrap's read-only `~/.local` bind. Keep `CODEX_HOME` and adapter state under its writable `~/.cache` bind. Use `CODEX_API_KEY`; the jail does not expose the normal Codex login directory. An explicit `--no-sandbox` preflight is the opt-out path for hosts that intentionally use `codex login` or `OPENAI_API_KEY`.
+The agentic compatibility command supports Linux only. Keep GEPA's default `sandbox=True`. Staging puts the adapter under Bubblewrap's read-only `~/.local` bind. Keep `CODEX_HOME` and adapter state under its writable `~/.cache` bind. Authenticate that isolated home with `sandbox_runtime.py login`, or use `CODEX_API_KEY`. The jail does not expose the normal `~/.codex` login directory. An explicit `--no-sandbox` preflight is the opt-out path for hosts that intentionally use the normal Codex login.
 
-The adapter maps the pinned GEPA default `claude-sonnet-4-6` to `gpt-5.6-luna`. It rejects other source models before starting Codex. Sandboxed runs require `CODEX_API_KEY`; the adapter preserves the existing `CODEX_HOME` and does not copy auth into its session-state directory. Unsandboxed runs may use an existing `codex login` or `OPENAI_API_KEY`.
+The adapter maps the pinned GEPA default `claude-sonnet-4-6` to `gpt-5.6-luna`. It rejects other source models before starting Codex. Sandboxed runs require either the staged ChatGPT login or `CODEX_API_KEY`; the adapter preserves the existing `CODEX_HOME` and never copies authentication into its session-state directory. Unsandboxed runs may use an existing normal `codex login`. `OPENAI_API_KEY` remains available to GEPA's in-process models but is never translated into Codex authentication.
 
 Do not set `max_token_cost` with `autoresearch` or `meta_harness`. GEPA passes it as `--max-budget-usd`; the adapter rejects that flag before spawning Codex because it cannot enforce a USD cap. Callers must explicitly set `max_evals=10` and, for `meta_harness`, `max_iterations=3` plus `max_candidates_per_iter=3`. The adapter alone enforces a default of four atomic starts per unique state directory. It retries once only when Codex is known not to have started, and that retry consumes an invocation slot. It never retries an ambiguous, usage-bearing, or completed call. Set `CODEX_ADAPTER_MAX_INVOCATIONS` to a different positive integer to override the atomic start cap; a claimed slot remains consumed after failure. Set `stop_at_score` whenever the metric has a known ceiling. A host timeout is an optional emergency stop, not a default budget. `total_cost_usd` is a conservative standard-tier estimate from observed tokens, not provider billing. The adapter accepts pinned GEPA's exact web-tool denial, disables Codex's standalone web search, and rejects unknown policy values plus `--settings` before Codex starts. Shell network access remains available, matching GEPA's unsandboxed agent path.
 

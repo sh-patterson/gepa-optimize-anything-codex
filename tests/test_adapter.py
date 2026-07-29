@@ -293,6 +293,8 @@ def test_wrong_shaped_codex_jsonl_fails_closed(raw, expected_error):
 def test_unrelated_tool_credentials_survive_environment_scrubbing(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "remove")
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "remove")
+    monkeypatch.setenv("CODEX_API_KEY", "re-add-explicitly")
+    monkeypatch.setenv("OPENAI_API_KEY", "remove")
     monkeypatch.setenv("GH_TOKEN", "keep")
     monkeypatch.setenv("AWS_SESSION_TOKEN", "keep")
 
@@ -300,8 +302,39 @@ def test_unrelated_tool_credentials_survive_environment_scrubbing(monkeypatch):
 
     assert "ANTHROPIC_API_KEY" not in child_env
     assert "CLAUDE_CODE_OAUTH_TOKEN" not in child_env
+    assert "CODEX_API_KEY" not in child_env
+    assert "OPENAI_API_KEY" not in child_env
     assert child_env["GH_TOKEN"] == "keep"
     assert child_env["AWS_SESSION_TOKEN"] == "keep"
+
+
+def test_codex_child_uses_only_the_explicit_codex_api_key(tmp_path, monkeypatch):
+    captured = {}
+
+    def run_codex(_command, _cwd, environment):
+        captured.update(environment)
+        return subprocess.CompletedProcess(
+            [],
+            0,
+            '{"type":"thread.started","thread_id":"codex-thread-1"}\n'
+            '{"type":"item.completed","item":{"type":"agent_message","text":"done"}}\n'
+            '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}\n',
+            "",
+        )
+
+    monkeypatch.setenv("CODEX_CLI", "codex")
+    monkeypatch.setenv("CODEX_ADAPTER_STATE_DIR", str(tmp_path / "adapter-state"))
+    monkeypatch.setenv("CODEX_API_KEY", "codex-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "evaluator-key")
+    monkeypatch.setattr("codex_claude_adapter._run_codex", run_codex)
+    request = parse_agent_request(
+        ["--print", "--session-id", "upstream-1", "prompt"], tmp_path
+    )
+
+    invoke_codex(request)
+
+    assert captured["CODEX_API_KEY"] == "codex-key"
+    assert "OPENAI_API_KEY" not in captured
 
 
 def test_cost_estimate_includes_cache_write_and_long_context_rates():
