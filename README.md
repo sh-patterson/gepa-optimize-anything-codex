@@ -67,7 +67,9 @@ The adapter alone enforces a default of four atomic starts per state directory.
 It retries once only when Codex is known not to have started. The retry consumes
 one of the four starts. Ambiguous, usage-bearing, and completed calls are never
 retried. Set `CODEX_ADAPTER_MAX_INVOCATIONS` to a different positive integer to
-override the adapter ceiling. Set
+override the adapter ceiling. Set `CODEX_ADAPTER_PRE_SUBMISSION_RETRIES=0` for
+a zero-retry evidence run; the production default remains one known-not-started
+retry. Set
 `stop_at_score` whenever the metric has a known ceiling. A host timeout remains
 an optional emergency stop, not a default run budget.
 
@@ -127,8 +129,10 @@ RUN_CODEX_LIVE=1 python -m pytest -q tests/test_live_optimize_anything.py
 ```
 
 The same live test file runs installed-plugin smokes for the in-process `gepa`
-and `best_of_n` engines with `OPENAI_API_KEY` and the exact
-`openai/gpt-5.1` model. Their standalone commands are:
+and `best_of_n` engines through the installed `CodexLM` driver. All four release
+smokes therefore use staged ChatGPT login, `gpt-5.6-luna` with high reasoning,
+the adapter invocation journal, and the same token-derived usage estimate.
+Neither API-key variable may be present. Their standalone commands are:
 
 ```bash
 RUN_CODEX_LIVE=1 python scripts/release_inprocess_smoke.py --engine gepa --output-dir /tmp/gepa-smoke

@@ -18,7 +18,7 @@ INPROCESS_SMOKE = ROOT / "scripts" / "release_inprocess_smoke.py"
 @pytest.mark.live
 @pytest.mark.skipif(
     os.environ.get("RUN_CODEX_LIVE") != "1",
-    reason="requires live OpenAI Platform calls",
+    reason="requires live Codex calls",
 )
 @pytest.mark.parametrize("engine", ("gepa", "best_of_n"))
 def test_installed_inprocess_smoke(
@@ -45,9 +45,12 @@ def test_installed_inprocess_smoke(
     receipt = json.loads(proc.stdout)
     assert receipt["status"] == "success"
     assert receipt["engine"] == engine
-    assert receipt["provider"] == "openai"
-    assert receipt["model"] == "openai/gpt-5.1"
+    assert receipt["provider"] == "codex"
+    assert receipt["model"] == "gpt-5.6-luna"
     assert receipt["retry_count"] == 0
+    assert receipt["authentication"]["mode"] == "chatgpt_login"
+    assert receipt["authentication"]["child_api_keys_present"] is False
+    assert receipt["session_mapping"]
     assert receipt["result"]["improved"] is True
     assert receipt["result"]["best_score"] == 1.0
     assert receipt["usage"]["input_tokens"] + receipt["usage"]["output_tokens"] > 0

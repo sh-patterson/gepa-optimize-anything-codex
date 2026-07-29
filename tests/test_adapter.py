@@ -28,6 +28,7 @@ from codex_claude_adapter import (  # noqa: E402
     _codex_command,
     _load_session_thread,
     _max_adapter_invocations,
+    _pre_submission_retries,
     _save_session_thread,
     invoke_codex,
     estimated_luna_cost,
@@ -582,6 +583,28 @@ def test_retry_once_when_codex_cannot_be_started(tmp_path, monkeypatch):
         "completed",
         "failed",
     ]
+
+
+def test_release_policy_can_disable_pre_submission_retry(tmp_path, monkeypatch):
+    calls = 0
+
+    def run_codex(*_args):
+        nonlocal calls
+        calls += 1
+        raise BlockingIOError(errno.EAGAIN, "temporarily unable to start Codex")
+
+    monkeypatch.setenv("CODEX_CLI", "codex")
+    monkeypatch.setenv("CODEX_ADAPTER_STATE_DIR", str(tmp_path / "adapter-state"))
+    monkeypatch.setenv("CODEX_ADAPTER_PRE_SUBMISSION_RETRIES", "0")
+    monkeypatch.setattr("codex_claude_adapter._run_codex", run_codex)
+    request = parse_agent_request(
+        ["--print", "--session-id", "upstream-1", "prompt"], tmp_path
+    )
+
+    assert _pre_submission_retries() == 0
+    with pytest.raises(BlockingIOError):
+        invoke_codex(request)
+    assert calls == 1
 
 
 def test_invocation_cap_allows_one_concurrent_attempt(tmp_path, monkeypatch):
