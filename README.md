@@ -50,7 +50,9 @@ Do not set `max_token_cost` for `autoresearch` or `meta_harness`. GEPA sends it
 to the compatibility command as `--max-budget-usd`; the adapter rejects that
 flag before spawning Codex because it cannot enforce a USD ceiling. Use
 `max_evals`, `stop_at_score`, and a host-level timeout. Set an external spend
-limit in the OpenAI account before a paid run.
+limit in the OpenAI account before a paid run. That account-level control does
+not satisfy GEPA's per-invocation hard-budget contract. The release gate remains
+[externally blocked](HARD_BUDGET.md).
 
 The adapter accepts pinned GEPA's exact
 `--disallowedTools=WebFetch,WebSearch`, `--output-format json`, and
