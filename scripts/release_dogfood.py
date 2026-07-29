@@ -582,7 +582,6 @@ def run_release(
         require_unique_state_dir(state_dir)
         skill = skill_dir()
         environment, staged = stage_and_preflight(skill, engine, state_dir)
-        from gepa import __version__ as gepa_version
         import gepa
 
         plugin = skill.parents[1] / ".codex-plugin" / "plugin.json"
@@ -594,7 +593,7 @@ def run_release(
         release_commit = _git_commit(REPOSITORY_ROOT)
         source = {
             "gepa_module": str(gepa_module),
-            "gepa_version": gepa_version,
+            "gepa_version": importlib.metadata.version("gepa"),
             "gepa_commit": _installed_vcs_commit("gepa"),
             "skill_path": str(skill),
             "skill_version": skill_version,
