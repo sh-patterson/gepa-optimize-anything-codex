@@ -26,6 +26,7 @@ def test_skill_has_required_files_and_local_links():
     for name in (
         "api.md",
         "gotchas.md",
+        "runtime.md",
         "tracking.md",
         "writing_evaluators.md",
     ):
@@ -84,7 +85,7 @@ def test_codex_agentic_caller_limits_and_adapter_default_are_distinct():
         assert "max_evals=10" in document
         assert "max_iterations=3" in document
         assert "max_candidates_per_iter=3" in document
-        assert "adapter alone enforces a default of four atomic starts" in document
+        assert "four atomic starts" in document
 
 
 def test_supported_codex_cli_version_is_pinned_consistently():
@@ -109,6 +110,30 @@ def test_public_adapter_scope_is_explicit():
     api = (SKILL / "references" / "api.md").read_text(encoding="utf-8")
 
     assert "public Codex adapter supports `autoresearch`" in readme
-    assert "`meta_harness`; it does not replace the in-process LM interface" in readme
-    assert "release-test plumbing, not a public composition API" in skill
+    assert "`meta_harness`. It does not" in readme
+    assert "replace GEPA's in-process LM interface" in readme
+    assert "in-process `gepa` and `best_of_n`" in skill
     assert "does not support macOS agentic execution" in api
+
+
+def test_public_docs_keep_release_and_runtime_internals_out_of_first_run():
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    release_readme = (ROOT / "release" / "README.md").read_text(encoding="utf-8")
+    skill = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+    references = [
+        path.read_text(encoding="utf-8")
+        for path in (SKILL / "references").glob("*.md")
+    ]
+    support_matrix = readme.split("## Supported engines", 1)[1].split(
+        "## Requirements", 1
+    )[0]
+    first_run = readme.split("## Supported engines", 1)[0]
+
+    for engine in ("gepa", "best_of_n", "autoresearch", "meta_harness"):
+        assert f"`{engine}`" in support_matrix
+    assert "claude" not in first_run.casefold()
+    assert "RUN_CODEX_LIVE" not in readme
+    assert "RUN_CODEX_LIVE" not in skill
+    assert all("RUN_CODEX_LIVE" not in document for document in references)
+    assert "RUN_CODEX_LIVE" in release_readme
+    assert "CodexLM" not in "\n".join([readme, release_readme, skill, *references])

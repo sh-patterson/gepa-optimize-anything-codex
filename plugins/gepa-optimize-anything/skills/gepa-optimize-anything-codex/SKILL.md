@@ -5,12 +5,13 @@ description: >-
   schemas, SQL, and other scored text artifacts with GEPA, AutoResearch,
   MetaHarness, or best-of-N. Use when Codex needs to build an evaluator and
   proposer loop, compare optimization engines, tune a candidate against an
-  objective metric or LLM judge, or run GEPA's Claude-oriented agentic engines
-  through the included Codex compatibility command.
+  objective metric or LLM judge, or run GEPA's agentic engines through Codex.
 ---
 # `optimize_anything`
 
-This is a Codex port of GEPA's upstream Claude Code skill. Its `claude` compatibility command translates the supported Claude CLI contract into `codex exec`.
+This is a Codex port of GEPA's upstream skill. The installed runtime adapts
+GEPA's agentic process boundary to Codex. See `references/runtime.md` for that
+internal contract.
 
 For every `autoresearch` or `meta_harness` run:
 
@@ -25,7 +26,7 @@ For every `autoresearch` or `meta_harness` run:
 
 ## Codex adapter limits
 
-The agentic compatibility command supports Linux only. Keep GEPA's default `sandbox=True`. Staging puts the adapter under Bubblewrap's read-only `~/.local` bind. Keep `CODEX_HOME` and adapter state under its writable `~/.cache` bind. Authenticate that isolated home with `sandbox_runtime.py login`, or use `CODEX_API_KEY`. The jail does not expose the normal `~/.codex` login directory. An explicit `--no-sandbox` preflight is the opt-out path for hosts that intentionally use the normal Codex login.
+The agentic adapter supports Linux only. Keep GEPA's default `sandbox=True`. Staging puts the adapter under Bubblewrap's read-only `~/.local` bind. Keep `CODEX_HOME` and adapter state under its writable `~/.cache` bind. Authenticate that isolated home with `sandbox_runtime.py login`, or use `CODEX_API_KEY`. The jail does not expose the normal `~/.codex` login directory. An explicit `--no-sandbox` preflight is the opt-out path for hosts that intentionally use the normal Codex login.
 
 The adapter maps the pinned GEPA default `claude-sonnet-4-6` to `gpt-5.6-luna`. It rejects other source models before starting Codex. Sandboxed runs require either the staged ChatGPT login or `CODEX_API_KEY`; the adapter preserves the existing `CODEX_HOME` and never copies authentication into its session-state directory. Unsandboxed runs may use an existing normal `codex login`. `OPENAI_API_KEY` remains available to GEPA's in-process models but is never translated into Codex authentication.
 
@@ -61,9 +62,8 @@ deliberately naive: use it as a **baseline** to compare an optimizer against, no
 
 This plugin's public Codex adapter covers the Linux-only `autoresearch` and
 `meta_harness` subprocess boundary. The in-process `gepa` and `best_of_n`
-engines retain GEPA's upstream LM interface; the packaged `CodexLM` module is
-release-test plumbing, not a public composition API. macOS agentic execution is
-unsupported by this adapter.
+engines retain GEPA's upstream LM interface. macOS agentic execution is
+unsupported.
 
 This makes it easy to start with one backend and benchmark others on the identical task/evaluator.
 There are also **composition/pipeline helpers** that combine backends over the same task:
@@ -112,8 +112,7 @@ pip install "gepa[full] @ git+https://github.com/gepa-ai/gepa.git@0310bb7b4952d4
                            # can fail there when your evaluator closes over data.
 # Proposer LLM: in-process engines use GEPA's upstream LM interface. Configure
 # the provider model and credentials required by that interface.
-# Agentic backends (autoresearch, meta_harness) additionally need the Codex CLI and this skill's
-# `scripts/claude` compatibility command on PATH (plus `jq` for the generated eval.sh).
+# Agentic backends additionally need the Codex CLI, `jq`, and the staged runtime.
 # Resolve SKILL_DIR to the directory containing this installed SKILL.md:
 RUNTIME_BIN="$(python "$SKILL_DIR/scripts/sandbox_runtime.py" stage)"
 export PATH="$RUNTIME_BIN:$PATH"
@@ -195,7 +194,7 @@ low** — raise it and rerun.
   accuracy). The backend stops the moment a candidate reaches it instead of burning the rest of the
   budget at the optimum.
 - **`max_token_cost`** — a hard USD cap for supported in-process backends. Do not set it for this
-  adapter's `autoresearch` or `meta_harness` path: the compatibility command fails closed because
+  adapter's `autoresearch` or `meta_harness` path: the adapter fails closed because
   Codex cannot enforce GEPA's `--max-budget-usd` contract.
 - **an optional wall-clock `timeout`** only when you need an emergency operational stop; do not use
   elapsed time as the default Codex work budget.
@@ -298,7 +297,7 @@ These silently degrade *results* — skim before launching:
 - **`engine_config` is validated strictly per backend** — an unknown key (including a leftover key
   from a different backend after swapping `engine=`) raises `TypeError` at construction. Swapping
   `engine=` means swapping the `engine_config` block. → `references/api.md`.
-- **Agentic backends (`autoresearch`, `meta_harness`) shell out to a command named `claude`.** This port stages that command inside GEPA's Linux Bubblewrap jail and invokes Codex. Run `python "$SKILL_DIR/scripts/preflight.py" --engine <engine>` before a real run.
+- **Agentic backends need the staged Codex runtime.** Keep `sandbox=True` and run `python "$SKILL_DIR/scripts/preflight.py" --engine <engine>` before a real run. See `references/runtime.md`.
 
 ## Reference files (load as needed)
 - `references/api.md` — `OptimizeAnythingConfig`, the backends and their typed `engine_config`
@@ -308,4 +307,5 @@ These silently degrade *results* — skim before launching:
   LLM-as-judge scoring, multi-objective via `info["scores"]`, N>1 averaging, feedback design.
 - `references/tracking.md` — enabling wandb / mlflow experiment tracking and what gets logged.
 - `references/gotchas.md` — reward hacking, selection bias, the three modes, backend prerequisites.
-- `scripts/preflight.py` — validate credentials, proposer LM, and the Codex-backed `claude` command before launching.
+- `references/runtime.md` — Linux staging, authentication, Bubblewrap, run state, and Codex adapter limits.
+- `scripts/preflight.py` — validate credentials, proposer LM, and the staged Codex runtime before launching.

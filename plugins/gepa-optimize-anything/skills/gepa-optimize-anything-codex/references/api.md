@@ -88,8 +88,8 @@ changing one argument. Each backend parses `engine_config` into its own typed da
 | engine | how it proposes candidates | runs | needs |
 |---|---|---|---|
 | `gepa` | an LLM reflects on evaluator feedback and mutates the candidate; keeps a Pareto frontier | in-process | reflection-LM creds (default `openai/gpt-5.1`) or a custom LM |
-| `autoresearch` | one Codex subprocess iterates in a work dir (`program.md`, `candidate.txt`, `eval.sh` → HTTP eval server) | subprocess | Codex adapter `claude` on PATH + Codex auth, `jq` |
-| `meta_harness` | a Codex subprocess reads frontier/history and writes `pending_eval.json` candidates; the engine benchmarks each | subprocess | Codex adapter `claude` on PATH + Codex auth |
+| `autoresearch` | one Codex subprocess iterates in a work dir (`program.md`, `candidate.txt`, `eval.sh` → HTTP eval server) | subprocess | staged Codex runtime + Codex auth, `jq` |
+| `meta_harness` | a Codex subprocess reads frontier/history and writes `pending_eval.json` candidates; the engine benchmarks each | subprocess | staged Codex runtime + Codex auth |
 | `best_of_n` *(baseline)* | independent single-shot samples from one LLM; keep the best — no feedback, no history | in-process | LiteLLM creds for `model` (default `claude-sonnet-4-6`) |
 
 Run `python "$SKILL_DIR/scripts/preflight.py" --engine <engine>` to check a
