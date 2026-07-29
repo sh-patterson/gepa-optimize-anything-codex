@@ -81,6 +81,8 @@ def _installed_skill() -> tuple[Path, Path]:
         raise RuntimeError("in-process smoke requires an installed plugin")
     if not (skill / "SKILL.md").is_file():
         raise RuntimeError("installed skill is missing SKILL.md")
+    if (skill / "scripts" / "codex_lm.py").exists():
+        raise RuntimeError("installed plugin must not contain codex_lm.py")
     manifest = skill.parents[1] / ".codex-plugin" / "plugin.json"
     try:
         payload = json.loads(manifest.read_text(encoding="utf-8"))
@@ -214,7 +216,7 @@ def _prepare_codex_runtime(skill: Path, work_dir: Path) -> dict[str, Any]:
         f"release_inprocess_runtime_{uuid4().hex}",
     )
     driver = _load_script(
-        skill / "scripts" / "codex_lm.py",
+        REPOSITORY_ROOT / "scripts" / "release_codex_lm.py",
         f"release_inprocess_driver_{uuid4().hex}",
     )
     state_dir = (
@@ -412,7 +414,7 @@ def run_smoke(
         "skill": skill / "SKILL.md",
         "plugin_manifest": manifest,
         "runner": Path(__file__).resolve(),
-        "codex_lm": skill / "scripts" / "codex_lm.py",
+        "release_codex_lm": REPOSITORY_ROOT / "scripts" / "release_codex_lm.py",
         "adapter": runtime["adapter"],
         **runtime_evidence["evidence_files"],
     }

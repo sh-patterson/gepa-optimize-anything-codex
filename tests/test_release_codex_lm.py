@@ -9,16 +9,8 @@ import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = (
-    ROOT
-    / "plugins"
-    / "gepa-optimize-anything"
-    / "skills"
-    / "gepa-optimize-anything-codex"
-    / "scripts"
-    / "codex_lm.py"
-)
-SPEC = importlib.util.spec_from_file_location("codex_lm_test", SCRIPT)
+SCRIPT = ROOT / "scripts" / "release_codex_lm.py"
+SPEC = importlib.util.spec_from_file_location("release_codex_lm_test", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
 codex_lm = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = codex_lm

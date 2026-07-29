@@ -28,7 +28,6 @@ def _installed_skill(tmp_path: Path) -> Path:
     manifest.write_text('{"version":"1.0.0"}\n', encoding="utf-8")
     scripts = skill / "scripts"
     scripts.mkdir()
-    (scripts / "codex_lm.py").write_text("# driver\n", encoding="utf-8")
     (scripts / "codex_claude_adapter.py").write_text("# adapter\n", encoding="utf-8")
     (scripts / "claude").write_text("# launcher\n", encoding="utf-8")
     return skill
@@ -170,6 +169,59 @@ def test_codex_runtime_rejects_api_keys_before_staging(
         smoke._prepare_codex_runtime(tmp_path / "skill", tmp_path / "work")
 
 
+def test_codex_runtime_loads_repository_driver_and_installed_adapter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    skill = _installed_skill(tmp_path)
+    loaded_paths: list[Path] = []
+    installed_adapter = skill / "scripts" / "codex_claude_adapter.py"
+
+    class Runtime:
+        @staticmethod
+        def runtime_paths() -> object:
+            return object()
+
+        @staticmethod
+        def stage_runtime(paths: object) -> object:
+            return paths
+
+        @staticmethod
+        def resolve_state_dir(_paths: object, state_dir: Path) -> Path:
+            return state_dir
+
+        @staticmethod
+        def probe_runtime(_paths: object, _state_dir: Path) -> object:
+            return type("Probe", (), {"returncode": 0})()
+
+        @staticmethod
+        def runtime_environment(_paths: object, _state_dir: Path) -> dict[str, str]:
+            return {"SAFE": "1"}
+
+    paths = type(
+        "Paths",
+        (),
+        {"launcher": skill / "scripts" / "claude", "adapter_module": installed_adapter},
+    )()
+    Runtime.stage_runtime = staticmethod(lambda _paths: paths)
+
+    def fake_load(path: Path, _name: str) -> object:
+        loaded_paths.append(path)
+        if path == skill / "scripts" / "sandbox_runtime.py":
+            return Runtime()
+        assert path == ROOT / "scripts" / "release_codex_lm.py"
+        return type("Driver", (), {"CodexLM": object})()
+
+    monkeypatch.setattr(smoke, "_load_script", fake_load)
+
+    runtime = smoke._prepare_codex_runtime(skill, tmp_path / "work")
+
+    assert loaded_paths == [
+        skill / "scripts" / "sandbox_runtime.py",
+        ROOT / "scripts" / "release_codex_lm.py",
+    ]
+    assert runtime["adapter"] == installed_adapter
+
+
 def test_installed_gepa_commit_comes_from_direct_url_metadata(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -203,6 +255,17 @@ def test_smoke_requires_installed_plugin(
 ) -> None:
     monkeypatch.delenv("GEPA_CODEX_SKILL_DIR", raising=False)
     with pytest.raises(RuntimeError, match="GEPA_CODEX_SKILL_DIR"):
+        smoke.run_smoke("gepa", tmp_path / "output")
+
+
+def test_smoke_rejects_installed_legacy_codex_driver(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    skill = _installed_skill(tmp_path)
+    (skill / "scripts" / "codex_lm.py").write_text("# legacy\n", encoding="utf-8")
+    monkeypatch.setenv("GEPA_CODEX_SKILL_DIR", str(skill))
+
+    with pytest.raises(RuntimeError, match="must not contain codex_lm.py"):
         smoke.run_smoke("gepa", tmp_path / "output")
 
 
@@ -251,9 +314,21 @@ def test_smoke_writes_sanitized_installed_receipt(
         "skill",
         "plugin_manifest",
         "runner",
-        "codex_lm",
+        "release_codex_lm",
         "adapter",
     }
+    assert receipt["hashes"]["release_codex_lm"] == smoke._sha256(
+        ROOT / "scripts" / "release_codex_lm.py"
+    )
+    assert receipt["hashes"]["adapter"] == smoke._sha256(
+        tmp_path
+        / "installed"
+        / "gepa-optimize-anything"
+        / "skills"
+        / "gepa-optimize-anything-codex"
+        / "scripts"
+        / "codex_claude_adapter.py"
+    )
     assert "Return BLUE." not in json.dumps(receipt)
     assert seen["seed_candidate"] == "Return RED."
     config = seen["config"]

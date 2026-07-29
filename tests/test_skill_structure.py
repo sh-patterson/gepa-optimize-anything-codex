@@ -21,7 +21,7 @@ def test_skill_has_required_files_and_local_links():
     assert "allow_implicit_invocation: true" in agent_policy
     assert (SKILL / "scripts" / "claude").is_file()
     assert (SKILL / "scripts" / "codex_claude_adapter.py").is_file()
-    assert (SKILL / "scripts" / "codex_lm.py").is_file()
+    assert not (SKILL / "scripts" / "codex_lm.py").exists()
     assert (SKILL / "scripts" / "preflight.py").is_file()
     for name in (
         "api.md",
