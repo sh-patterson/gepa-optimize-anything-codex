@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "result": "passed",
+  "model_calls": 0,
+  "tested_commit": "4d5f4d6",
+  "gepa_commit": "41ca7c3a3d1cc502ab357163325b9751a05507f6",
+  "gepa_source": "https://github.com/sh-patterson/gepa",
+  "codex_cli_version": "0.144.6",
+  "plugin": {
+    "marketplace": "gepa-optimize-anything-codex",
+    "name": "gepa-optimize-anything",
+    "version": "0.2.1",
+    "installed": true,
+    "enabled": true,
+    "resolved_outside_source_checkout": true
+  },
+  "sandbox": {
+    "bubblewrap": true,
+    "autoresearch_preflight": "passed",
+    "meta_harness_preflight": "passed"
+  },
+  "checks": {
+    "installed_free_integrations": "2 passed",
+    "non_live_suite": "61 passed, 3 deselected",
+    "ruff": "passed"
+  },
+  "hashes": {
+    "plugin_json_sha256": "78e2de22535670f7795b13a3841e3420ee246fd9f67fccb48b69bd123846785b",
+    "skill_sha256": "126cd4f10b65b5c3893380459c9bda03ab6b720fdfa2cdbfc07926530ed938ea"
+  }
+}

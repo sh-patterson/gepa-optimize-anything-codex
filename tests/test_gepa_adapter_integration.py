@@ -11,14 +11,16 @@ import pytest
 
 
 ROOT = Path(__file__).parents[1]
-SCRIPTS = (
+CHECKOUT_SKILL_DIR = (
     ROOT
     / "plugins"
     / "gepa-optimize-anything"
     / "skills"
     / "gepa-optimize-anything-codex"
-    / "scripts"
 )
+SKILL_DIR = Path(os.environ.get("GEPA_CODEX_SKILL_DIR", CHECKOUT_SKILL_DIR)).resolve()
+assert (SKILL_DIR / "SKILL.md").is_file()
+SCRIPTS = SKILL_DIR / "scripts"
 RUNTIME_SPEC = importlib.util.spec_from_file_location(
     "sandbox_runtime", SCRIPTS / "sandbox_runtime.py"
 )

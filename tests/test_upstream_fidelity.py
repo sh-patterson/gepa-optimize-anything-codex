@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 import hashlib
+import tomllib
 from pathlib import Path
 
 
 ROOT = Path(__file__).parents[1]
+PINNED_GEPA_COMMIT = "41ca7c3a3d1cc502ab357163325b9751a05507f6"
+PINNED_GEPA_DEPENDENCY = (
+    "gepa[full] @ git+https://github.com/sh-patterson/gepa.git@"
+    f"{PINNED_GEPA_COMMIT}"
+)
 SKILL = (
     ROOT
     / "plugins"
@@ -28,7 +34,7 @@ PINNED_UPSTREAM_SHA256 = {
 }
 
 REVIEWED_LOCAL_SHA256 = {
-    "SKILL.md": "ac857728080c7b4d04c7fde037b3f9177991a8846fc9cd0b58d88877cfca395e",
+    "SKILL.md": "126cd4f10b65b5c3893380459c9bda03ab6b720fdfa2cdbfc07926530ed938ea",
     "references/api.md": (
         "7ca0f1145dd7cbc1e6c4ea0c5e1f18c71e4c545a947e7ee7203b65aac13bf2e8"
     ),
@@ -80,6 +86,17 @@ def test_copied_docs_match_reviewed_upstream_adaptation() -> None:
     for relative_path, expected_hash in REVIEWED_LOCAL_SHA256.items():
         actual_hash = hashlib.sha256(normalized_bytes(SKILL / relative_path)).hexdigest()
         assert actual_hash == expected_hash, relative_path
+
+
+def test_gepa_pin_is_consistent_across_install_paths() -> None:
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    live_dependencies = pyproject["project"]["optional-dependencies"]["live"]
+    upstream = (ROOT / "UPSTREAM.md").read_text(encoding="utf-8")
+    skill = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+
+    assert live_dependencies == [PINNED_GEPA_DEPENDENCY]
+    assert PINNED_GEPA_COMMIT in upstream
+    assert PINNED_GEPA_DEPENDENCY in skill
 
 
 def test_upstream_copy_has_no_known_truncations() -> None:
