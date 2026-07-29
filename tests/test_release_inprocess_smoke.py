@@ -40,6 +40,36 @@ class _Result:
     metadata = {"usage": {"input_tokens": 12, "output_tokens": 8}}
 
 
+def _evidence() -> object:
+    return sys.modules["release_evidence"].AdapterEvidence(
+        invocation_paths=(),
+        session_paths=(),
+        usage={"input_tokens": 12, "output_tokens": 8},
+        estimated_cost_usd=0.001,
+        mappings=(
+            {
+                "upstream_session_id": "test",
+                "codex_thread_id": "test",
+                "resume": False,
+                "cost_status": "standard_tier_upper_estimate_from_observed_usage",
+                "terminal_status": "completed",
+                "return_code": 0,
+            },
+        ),
+    )
+
+
+def _provenance(skill: Path, *_args: object, **_kwargs: object) -> dict[str, object]:
+    return {
+        "installed_plugin": True,
+        "skill_path": "installed-skill",
+        "plugin_manifest": str(skill.parents[1] / ".codex-plugin" / "plugin.json"),
+        "plugin_version": "1.0.0",
+        "repository_commit": "a" * 40,
+        "gepa_commit": "b" * 40,
+    }
+
+
 def test_config_is_bounded_and_uses_codex_model(tmp_path: Path) -> None:
     from gepa.oa.engines.best_of_n import BestOfNEngine
     from gepa.oa.engines.gepa import GepaEngine
@@ -72,42 +102,6 @@ def test_codex_usage_requires_positive_model_tokens() -> None:
         smoke._codex_usage([])
 
 
-def test_journal_evidence_hashes_invocation_and_session_records(
-    tmp_path: Path,
-) -> None:
-    state = tmp_path / "state"
-    invocations = state / "invocations"
-    sessions = state / "sessions"
-    invocations.mkdir(parents=True)
-    sessions.mkdir()
-    invocation = {
-        "terminal_status": "completed",
-        "return_code": 0,
-        "target_model": smoke.MODEL,
-        "reasoning_effort": smoke.REASONING_EFFORT,
-        "usage": {"input_tokens": 10, "output_tokens": 2},
-        "estimated_cost_usd": 0.001,
-        "upstream_session_id": "session",
-        "codex_thread_id": "thread",
-    }
-    invocation_path = invocations / "one.json"
-    invocation_path.write_text(json.dumps(invocation), encoding="utf-8")
-    session_path = sessions / "one.json"
-    session_path.write_text(
-        json.dumps({"upstream_session_id": "session", "thread_id": "thread"}),
-        encoding="utf-8",
-    )
-
-    evidence = smoke._journal_evidence(
-        state, 1, {"input_tokens": 10, "output_tokens": 2}
-    )
-
-    assert evidence["evidence_files"] == {
-        "invocation_1": invocation_path,
-        "session_1": session_path,
-    }
-
-
 @pytest.mark.parametrize("engine", ("gepa", "best_of_n"))
 def test_runner_injects_codex_driver_into_inprocess_engines(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, engine: str
@@ -128,17 +122,6 @@ def test_runner_injects_codex_driver_into_inprocess_engines(
             self.invocation_count += 1
             return "```\nReturn BLUE.\n```" if engine == "best_of_n" else "Return BLUE."
 
-    monkeypatch.setattr(
-        smoke,
-        "_journal_evidence",
-        lambda _state, count, usage: {
-            "invocation_count": count,
-            "estimated_cost_usd": 0.001,
-            "session_mapping": [
-                {"upstream_session_id": "session", "codex_thread_id": "thread"}
-            ],
-        },
-    )
     runtime = {
         "driver": FakeCodexLM,
         "launcher": tmp_path / "claude",
@@ -148,15 +131,14 @@ def test_runner_injects_codex_driver_into_inprocess_engines(
         "probe_success": True,
     }
 
-    result, usage, evidence = smoke._run_codex(
+    result, usage, lms = smoke._run_codex(
         engine, smoke.config_for(engine, tmp_path), runtime
     )
 
     assert result.best_candidate == "Return BLUE."
     assert result.best_score == 1.0
     assert usage == {"input_tokens": 10, "output_tokens": 2}
-    assert evidence["invocation_count"] == 1
-    assert evidence["probe_success"] is True
+    assert lms == instances
     assert len(instances) == 1
 
 
@@ -222,34 +204,6 @@ def test_codex_runtime_loads_repository_driver_and_installed_adapter(
     assert runtime["adapter"] == installed_adapter
 
 
-def test_installed_gepa_commit_comes_from_direct_url_metadata(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    commit = "b" * 40
-
-    class Distribution:
-        @staticmethod
-        def read_text(name: str) -> str:
-            assert name == "direct_url.json"
-            return json.dumps({"vcs_info": {"commit_id": commit}})
-
-    monkeypatch.setattr(
-        smoke.importlib.metadata,
-        "distribution",
-        lambda name: Distribution(),
-    )
-
-    assert smoke._installed_vcs_commit("gepa") == commit
-
-
-def test_release_commit_uses_exported_archive_metadata(tmp_path: Path) -> None:
-    commit = "a" * 40
-    (tmp_path / "release").mkdir()
-    (tmp_path / "release" / "COMMIT").write_text(commit, encoding="utf-8")
-
-    assert smoke._git_commit(tmp_path) == commit
-
-
 def test_smoke_requires_installed_plugin(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -290,7 +244,8 @@ def test_smoke_writes_sanitized_installed_receipt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, engine: str
 ) -> None:
     monkeypatch.setenv("GEPA_CODEX_SKILL_DIR", str(_installed_skill(tmp_path)))
-    monkeypatch.setattr(smoke, "_installed_vcs_commit", lambda _package: "c" * 40)
+    monkeypatch.setattr(smoke, "read_adapter_evidence", lambda *_args, **_kwargs: _evidence())
+    monkeypatch.setattr(smoke, "installed_provenance", _provenance)
     seen: dict[str, object] = {}
 
     def fake_optimize(**kwargs: object) -> _Result:
@@ -317,10 +272,10 @@ def test_smoke_writes_sanitized_installed_receipt(
         "release_codex_lm",
         "adapter",
     }
-    assert receipt["hashes"]["release_codex_lm"] == smoke._sha256(
-        ROOT / "scripts" / "release_codex_lm.py"
-    )
-    assert receipt["hashes"]["adapter"] == smoke._sha256(
+    assert receipt["hashes"]["release_codex_lm"] == smoke.hash_files(
+        {"release_codex_lm": ROOT / "scripts" / "release_codex_lm.py"}
+    )["release_codex_lm"]
+    adapter = (
         tmp_path
         / "installed"
         / "gepa-optimize-anything"
@@ -329,6 +284,9 @@ def test_smoke_writes_sanitized_installed_receipt(
         / "scripts"
         / "codex_claude_adapter.py"
     )
+    assert receipt["hashes"]["adapter"] == smoke.hash_files({"adapter": adapter})[
+        "adapter"
+    ]
     assert "Return BLUE." not in json.dumps(receipt)
     assert seen["seed_candidate"] == "Return RED."
     config = seen["config"]
@@ -371,5 +329,20 @@ def test_smoke_fails_closed_for_incomplete_results(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, result: object, error: str
 ) -> None:
     monkeypatch.setenv("GEPA_CODEX_SKILL_DIR", str(_installed_skill(tmp_path)))
+
+    def matching_evidence(*_args: object, **_kwargs: object) -> object:
+        metadata = getattr(result, "metadata", {})
+        usage = metadata.get("usage", {}) if isinstance(metadata, dict) else {}
+        actual = _evidence()
+        return sys.modules["release_evidence"].AdapterEvidence(
+            invocation_paths=actual.invocation_paths,
+            session_paths=actual.session_paths,
+            usage=usage,
+            estimated_cost_usd=actual.estimated_cost_usd,
+            mappings=actual.mappings,
+        )
+
+    monkeypatch.setattr(smoke, "read_adapter_evidence", matching_evidence)
+    monkeypatch.setattr(smoke, "installed_provenance", _provenance)
     with pytest.raises(RuntimeError, match=error):
         smoke.run_smoke("gepa", tmp_path / "output", optimize=lambda **_: result)

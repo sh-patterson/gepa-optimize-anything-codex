@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import importlib.metadata
 import importlib.util
 import json
@@ -27,22 +26,15 @@ REASONING_EFFORT = "high"
 MAX_ADAPTER_INVOCATIONS = 1
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 API_KEY_NAMES = ("CODEX_API_KEY", "OPENAI_API_KEY")
-REQUIRED_INVOCATION_FIELDS = frozenset(
-    {
-        "schema_version",
-        "upstream_session_id",
-        "codex_thread_id",
-        "resume",
-        "source_model",
-        "target_model",
-        "reasoning_effort",
-        "return_code",
-        "terminal_status",
-        "usage",
-        "estimated_cost_usd",
-        "cost_status",
-        "duration_ms",
-    }
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from release_evidence import (  # noqa: E402
+    hash_files,
+    installed_provenance,
+    read_adapter_evidence,
+    write_verified_receipt,
 )
 
 
@@ -86,14 +78,6 @@ def release_policy(engine: str) -> dict[str, Any]:
     }
 
 
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as source:
-        for chunk in iter(lambda: source.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
 def _atomic_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary_path: Path | None = None
@@ -120,75 +104,6 @@ def _nonnegative_integer(value: object, name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise ValueError(f"invalid {name}")
     return value
-
-
-def _nonnegative_number(value: object, name: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ValueError(f"invalid {name}")
-    numeric = float(value)
-    if not math.isfinite(numeric) or numeric < 0:
-        raise ValueError(f"invalid {name}")
-    return numeric
-
-
-def _read_invocation(path: Path) -> dict[str, Any]:
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"invalid invocation JSON: {path}") from exc
-    if not isinstance(payload, dict):
-        raise ValueError(f"invalid invocation record: {path}")
-    missing = REQUIRED_INVOCATION_FIELDS - set(payload)
-    if missing:
-        names = ", ".join(sorted(missing))
-        raise ValueError(f"missing required field in invocation record: {names}")
-    if payload["schema_version"] != 1:
-        raise ValueError("unsupported invocation schema_version")
-    if payload["terminal_status"] != "completed":
-        raise ValueError("invocation terminal status is not completed")
-    if payload["return_code"] != 0:
-        raise ValueError("invocation return code is not zero")
-    if payload["target_model"] != TARGET_MODEL:
-        raise ValueError("invocation target model does not match release policy")
-    if payload["reasoning_effort"] != REASONING_EFFORT:
-        raise ValueError("invocation reasoning effort does not match release policy")
-    if (
-        not isinstance(payload["upstream_session_id"], str)
-        or not payload["upstream_session_id"]
-    ):
-        raise ValueError("invalid upstream_session_id")
-    if (
-        not isinstance(payload["codex_thread_id"], str)
-        or not payload["codex_thread_id"]
-    ):
-        raise ValueError("invalid codex_thread_id")
-    if not isinstance(payload["resume"], bool):
-        raise ValueError("invalid resume")
-    if not isinstance(payload["usage"], dict):
-        raise ValueError("invalid usage")
-    for name in ("input_tokens", "output_tokens"):
-        if name not in payload["usage"]:
-            raise ValueError(f"missing required usage field: {name}")
-    for name, value in payload["usage"].items():
-        _nonnegative_integer(value, f"usage.{name}")
-    if payload["usage"]["input_tokens"] + payload["usage"]["output_tokens"] <= 0:
-        raise ValueError("invocation usage is empty")
-    if _nonnegative_number(payload["estimated_cost_usd"], "estimated_cost_usd") <= 0:
-        raise ValueError("invocation estimated_cost_usd is empty")
-    if not isinstance(payload["cost_status"], str) or not payload["cost_status"]:
-        raise ValueError("invalid cost_status")
-    _nonnegative_integer(payload["duration_ms"], "duration_ms")
-    return payload
-
-
-def invocation_records(state_dir: Path) -> list[dict[str, Any]]:
-    invocation_dir = state_dir / "invocations"
-    if not invocation_dir.is_dir():
-        raise ValueError("missing invocation evidence directory")
-    records = [_read_invocation(path) for path in sorted(invocation_dir.glob("*.json"))]
-    if len(records) != 1:
-        raise ValueError("release evidence must contain exactly one invocation")
-    return records
 
 
 def require_unique_state_dir(state_dir: Path) -> None:
@@ -219,177 +134,16 @@ def _result_summary(result: object) -> dict[str, Any]:
     }
 
 
-def _required_hashes(paths: dict[str, Path]) -> dict[str, str]:
-    missing = [name for name, path in paths.items() if not path.is_file()]
-    if missing:
-        raise ValueError(f"missing required custody files: {', '.join(missing)}")
-    return {name: sha256_file(path) for name, path in paths.items()}
-
-
-def build_receipt(
-    *,
-    engine: str,
-    state_dir: Path,
-    manifest_path: Path,
-    source: dict[str, Any],
-    result: dict[str, Any],
-    file_paths: dict[str, Path],
-    commits: dict[str, str],
-    version: str,
-    authentication_mode: str,
-) -> dict[str, Any]:
-    records = invocation_records(state_dir)
-    usage: dict[str, int] = {}
-    for record in records:
-        for name, value in record["usage"].items():
-            usage[name] = usage.get(name, 0) + _nonnegative_integer(
-                value, f"usage.{name}"
-            )
-    estimated_cost = sum(
-        _nonnegative_number(record["estimated_cost_usd"], "estimated_cost_usd")
-        for record in records
-    )
-    if authentication_mode not in {"chatgpt_login", "codex_api_key"}:
-        raise ValueError("invalid authentication mode")
-    sessions = sorted((state_dir / "sessions").glob("*.json"))
-    if len(sessions) != 1:
-        raise ValueError("release evidence must contain exactly one session mapping")
-    _session_matches(sessions[0], records[0])
-    invocation_path = next((state_dir / "invocations").glob("*.json"))
-    evidence_paths = {
-        **file_paths,
-        "invocation": invocation_path,
-        "session": sessions[0],
-    }
-    return {
-        "schema_version": 2,
-        "status": "success",
-        "engine": engine,
-        "policy": release_policy(engine),
-        "commits": commits,
-        "versions": {
-            "plugin": version,
-            "gepa": source.get("gepa_version"),
-        },
-        "provenance": {
-            "installed_plugin": source.get("skill_source") == "installed_plugin",
-            "skill_path": source.get("skill_path"),
-            "plugin_manifest": source.get("plugin_manifest"),
-        },
-        "authentication": {
-            "mode": authentication_mode,
-            "child_api_keys_present": False,
-            "credentials_recorded": False,
-        },
-        "source": source,
-        "result": {
-            "improved": result["best_score"] == 1.0,
-            "best_score": result["best_score"],
-            "total_evals": result["total_evals"],
-        },
-        "usage": usage,
-        "cost": {
-            "estimated_usd": estimated_cost,
-            "cost_status": records[0]["cost_status"],
-            "source": "codex_adapter_invocation_journal",
-        },
-        "sandbox": {"enabled": True, "runtime": "bubblewrap"},
-        "terminal": {
-            "status": records[0]["terminal_status"],
-            "return_code": records[0]["return_code"],
-            "ambiguous_retry": False,
-        },
-        "session_mapping": [
-            {
-                "upstream_session_id": record["upstream_session_id"],
-                "codex_thread_id": record["codex_thread_id"],
-                "resume": record["resume"],
-            }
-            for record in records
-        ],
-        "file_hashes": _required_hashes(evidence_paths),
-    }
-
-
-def persist_receipt(output_dir: Path, receipt: dict[str, Any]) -> Path:
-    path = output_dir / "release_receipt.json"
-    _atomic_json(path, receipt)
-    return path
-
-
-def _git_commit(path: Path) -> str:
-    completed = subprocess.run(
-        ["git", "-C", str(path), "rev-parse", "HEAD"],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    commit = completed.stdout.strip()
-    if completed.returncode == 0 and len(commit) == 40:
-        return commit
-    try:
-        archived_commit = (path / "release" / "COMMIT").read_text(
-            encoding="utf-8"
-        ).strip()
-    except OSError as exc:
-        raise RuntimeError(f"cannot resolve git commit for {path}") from exc
-    if len(archived_commit) == 40 and all(
-        character in "0123456789abcdef" for character in archived_commit
-    ):
-        return archived_commit
-    raise RuntimeError(f"cannot resolve git commit for {path}")
-
-
-def _repository_root(path: Path) -> Path:
-    current = path.resolve()
-    for candidate in (current, *current.parents):
-        if (candidate / ".git").exists():
-            return candidate
-    raise RuntimeError(f"no repository root for {path}")
-
-
-def _installed_vcs_commit(package: str) -> str:
-    raw = importlib.metadata.distribution(package).read_text("direct_url.json")
-    try:
-        payload = json.loads(raw or "")
-        commit = payload["vcs_info"]["commit_id"]
-    except (KeyError, TypeError, json.JSONDecodeError) as exc:
-        raise RuntimeError(f"cannot resolve installed {package} commit") from exc
-    if not isinstance(commit, str) or len(commit) != 40:
-        raise RuntimeError(f"cannot resolve installed {package} commit")
-    return commit
-
-
 def _project_version() -> str:
     with (REPOSITORY_ROOT / "pyproject.toml").open("rb") as source:
         return str(tomllib.load(source)["project"]["version"])
 
 
-def _is_within(path: Path, parent: Path) -> bool:
-    try:
-        path.relative_to(parent)
-    except ValueError:
-        return False
-    return True
-
-
-def skill_dir() -> Path:
+def installed_skill_path() -> Path:
     configured = os.environ.get("GEPA_CODEX_SKILL_DIR")
     if not configured:
         raise RuntimeError("release dogfood requires GEPA_CODEX_SKILL_DIR")
-    selected = Path(configured).expanduser().resolve()
-    if _is_within(selected, REPOSITORY_ROOT):
-        raise RuntimeError("release dogfood requires an installed plugin")
-    if not (selected / "SKILL.md").is_file():
-        raise RuntimeError("GEPA Codex skill directory is missing SKILL.md")
-    plugin_manifest = selected.parents[1] / ".codex-plugin" / "plugin.json"
-    try:
-        plugin_data = json.loads(plugin_manifest.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise RuntimeError("installed plugin manifest is missing or invalid") from exc
-    if plugin_data.get("version") != _project_version():
-        raise RuntimeError("installed plugin version does not match the runner")
-    return selected
+    return Path(configured).expanduser().resolve()
 
 
 def authentication_mode(environment: dict[str, str]) -> str:
@@ -526,19 +280,6 @@ def _summary(path: Path) -> dict[str, Any]:
     return payload
 
 
-def _session_matches(path: Path, record: dict[str, Any]) -> None:
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise ValueError("invalid session mapping record") from exc
-    if (
-        not isinstance(payload, dict)
-        or payload.get("upstream_session_id") != record["upstream_session_id"]
-        or payload.get("thread_id") != record["codex_thread_id"]
-    ):
-        raise ValueError("session mapping does not match invocation evidence")
-
-
 def _valid_result(result: dict[str, Any]) -> None:
     if TARGET_TOKEN not in result["best_candidate"]:
         raise ValueError("best candidate does not contain BLUE")
@@ -565,9 +306,9 @@ def _failure_receipt(
     if source is not None:
         receipt["source"] = source
         receipt["sandbox"] = {"enabled": True, "runtime": source.get("sandbox_runtime")}
-    path = persist_receipt(root / "output", receipt)
+    path = root / "output" / "release_receipt.json"
     receipt["receipt_path"] = str(path)
-    _atomic_json(path, receipt)
+    write_verified_receipt(path, receipt)
     return receipt, path
 
 
@@ -578,27 +319,25 @@ def run_release(
     root.mkdir(parents=True, exist_ok=False)
     source: dict[str, Any] | None = None
     try:
+        skill = installed_skill_path()
+        skill_version = _project_version()
+        provenance = installed_provenance(skill, REPOSITORY_ROOT, skill_version)
         require_unique_state_dir(state_dir)
-        skill = skill_dir()
         environment, staged = stage_and_preflight(skill, engine, state_dir)
         import gepa
 
         plugin = skill.parents[1] / ".codex-plugin" / "plugin.json"
-        plugin_data = json.loads(plugin.read_text(encoding="utf-8"))
-        skill_version = plugin_data.get("version")
-        if not isinstance(skill_version, str) or not skill_version:
-            raise ValueError("selected plugin version is missing")
         gepa_module = Path(gepa.__file__).resolve()
-        release_commit = _git_commit(REPOSITORY_ROOT)
+        release_commit = provenance["repository_commit"]
         source = {
             "gepa_module": str(gepa_module),
             "gepa_version": importlib.metadata.version("gepa"),
-            "gepa_commit": _installed_vcs_commit("gepa"),
-            "skill_path": str(skill),
+            "gepa_commit": provenance["gepa_commit"],
+            "skill_path": provenance["skill_path"],
             "skill_version": skill_version,
             "plugin_commit": release_commit,
             "skill_source": "installed_plugin",
-            "plugin_manifest": str(plugin),
+            "plugin_manifest": provenance["plugin_manifest"],
             **staged,
         }
         auth_mode = authentication_mode(environment)
@@ -623,41 +362,76 @@ def run_release(
         _valid_result(result)
         summary_path = root / "output" / "summary.json"
         _summary(summary_path)
-        records = invocation_records(state_dir)
-        sessions = sorted((state_dir / "sessions").glob("*.json"))
-        if len(sessions) != 1:
-            raise ValueError(
-                "release evidence must contain exactly one session mapping"
-            )
-        _session_matches(sessions[0], records[0])
+        evidence = read_adapter_evidence(
+            state_dir,
+            target_model=TARGET_MODEL,
+            reasoning_effort=REASONING_EFFORT,
+            expected_invocations=1,
+        )
         files = {
             "plugin_json": plugin,
             "skill": skill / "SKILL.md",
             "launcher": Path(staged["launcher"]),
             "adapter": Path(staged["adapter_module"]),
             "summary": summary_path,
-            "invocation": next((state_dir / "invocations").glob("*.json")),
-            "session": sessions[0],
+            "invocation": evidence.invocation_paths[0],
+            "session": evidence.session_paths[0],
             "manifest": manifest,
         }
-        receipt = build_receipt(
-            engine=engine,
-            state_dir=state_dir,
-            manifest_path=manifest,
-            source=source,
-            result=result,
-            file_paths=files,
-            commits={
+        if auth_mode not in {"chatgpt_login", "codex_api_key"}:
+            raise ValueError("invalid authentication mode")
+        receipt = {
+            "schema_version": 2,
+            "status": "success",
+            "engine": engine,
+            "policy": release_policy(engine),
+            "commits": {
                 "runner": release_commit,
                 "gepa": source["gepa_commit"],
                 "plugin": source["plugin_commit"],
             },
-            version=str(source["skill_version"]),
-            authentication_mode=auth_mode,
-        )
-        path = persist_receipt(root / "output", receipt)
+            "versions": {"plugin": source["skill_version"], "gepa": source["gepa_version"]},
+            "provenance": {
+                "installed_plugin": True,
+                "skill_path": source["skill_path"],
+                "plugin_manifest": source["plugin_manifest"],
+            },
+            "authentication": {
+                "mode": auth_mode,
+                "child_api_keys_present": False,
+                "credentials_recorded": False,
+            },
+            "source": source,
+            "result": {
+                "improved": result["best_score"] == 1.0,
+                "best_score": result["best_score"],
+                "total_evals": result["total_evals"],
+            },
+            "usage": evidence.usage,
+            "cost": {
+                "estimated_usd": evidence.estimated_cost_usd,
+                "cost_status": evidence.mappings[0]["cost_status"],
+                "source": "codex_adapter_invocation_journal",
+            },
+            "sandbox": {"enabled": True, "runtime": "bubblewrap"},
+            "terminal": {
+                "status": evidence.mappings[0]["terminal_status"],
+                "return_code": evidence.mappings[0]["return_code"],
+                "ambiguous_retry": False,
+            },
+            "session_mapping": [
+                {
+                    "upstream_session_id": mapping["upstream_session_id"],
+                    "codex_thread_id": mapping["codex_thread_id"],
+                    "resume": mapping["resume"],
+                }
+                for mapping in evidence.mappings
+            ],
+            "file_hashes": hash_files(files),
+        }
+        path = root / "output" / "release_receipt.json"
         receipt["receipt_path"] = str(path)
-        _atomic_json(path, receipt)
+        write_verified_receipt(path, receipt)
         return receipt, path
     except (
         OSError,

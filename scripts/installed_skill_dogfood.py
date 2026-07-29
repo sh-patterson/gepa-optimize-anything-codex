@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.metadata
 import importlib.util
 import json
 import math
@@ -10,19 +11,30 @@ import shutil
 import subprocess
 import sys
 import time
+import tomllib
 import uuid
 from pathlib import Path
 from typing import Any
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-_RELEASE_SPEC = importlib.util.spec_from_file_location(
-    "installed_skill_release_dogfood", SCRIPT_DIR / "release_dogfood.py"
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from release_dogfood import (  # noqa: E402
+    API_KEY_NAMES,
+    REASONING_EFFORT,
+    TARGET_MODEL,
+    authentication_mode,
+    installed_skill_path,
+    require_unique_state_dir,
+    stage_and_preflight,
 )
-if _RELEASE_SPEC is None or _RELEASE_SPEC.loader is None:
-    raise RuntimeError("cannot load release_dogfood.py")
-release = importlib.util.module_from_spec(_RELEASE_SPEC)
-sys.modules[_RELEASE_SPEC.name] = release
-_RELEASE_SPEC.loader.exec_module(release)
+from release_evidence import (  # noqa: E402
+    hash_files,
+    installed_provenance,
+    read_adapter_evidence,
+    write_verified_receipt,
+)
 
 
 HOST_TIMEOUT_SECONDS = 600
@@ -34,10 +46,6 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 FIXTURES_DIR = REPOSITORY_ROOT / "release" / "fixtures"
 ROUTING_CASES_FIXTURE = FIXTURES_DIR / "support_routing_cases.json"
 TASK_FIXTURE = FIXTURES_DIR / "support_routing_task.py"
-
-
-def _atomic_json(path: Path, payload: dict[str, Any]) -> None:
-    release._atomic_json(path, payload)
 
 
 def _write_fixture(root: Path) -> tuple[Path, Path]:
@@ -54,6 +62,21 @@ def _task_fixture(path: Path) -> list[dict[str, str]]:
     if not isinstance(cases, list) or len(cases) != 8:
         raise ValueError("invalid routing evaluator fixture")
     return cases
+
+
+def _project_version() -> str:
+    with (REPOSITORY_ROOT / "pyproject.toml").open("rb") as source:
+        return str(tomllib.load(source)["project"]["version"])
+
+
+def _load_module(name: str, path: Path) -> object:
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot import {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def _outer_command(
@@ -73,9 +96,9 @@ def _outer_command(
         "--ignore-user-config",
         "--skip-git-repo-check",
         "-m",
-        release.TARGET_MODEL,
+        TARGET_MODEL,
         "-c",
-        f'model_reasoning_effort="{release.REASONING_EFFORT}"',
+        f'model_reasoning_effort="{REASONING_EFFORT}"',
         "-c",
         'sandbox_mode="workspace-write"',
         "-c",
@@ -205,36 +228,6 @@ def _validate_result(result: dict[str, Any]) -> None:
             raise ValueError("dogfood score trace is invalid")
 
 
-def _inner_evidence(state_dir: Path) -> tuple[dict[str, Any], dict[str, Path]]:
-    records = release.invocation_records(state_dir)
-    record = records[0]
-    if record["resume"]:
-        raise ValueError("dogfood inner invocation unexpectedly resumed")
-    sessions = sorted((state_dir / "sessions").glob("*.json"))
-    if len(sessions) != 1:
-        raise ValueError("dogfood requires one inner session mapping")
-    release._session_matches(sessions[0], record)
-    invocation = next((state_dir / "invocations").glob("*.json"))
-    return record, {"invocation": invocation, "session": sessions[0]}
-
-
-def _source(skill: Path, staged: dict[str, Any]) -> dict[str, Any]:
-    import importlib.metadata
-
-    manifest = skill.parents[1] / ".codex-plugin" / "plugin.json"
-    plugin = json.loads(manifest.read_text(encoding="utf-8"))
-    return {
-        "installed_plugin": True,
-        "skill_path": str(skill),
-        "plugin_manifest": str(manifest),
-        "plugin_version": plugin["version"],
-        "repository_commit": release._git_commit(REPOSITORY_ROOT),
-        "gepa_version": importlib.metadata.version("gepa"),
-        "gepa_commit": release._installed_vcs_commit("gepa"),
-        **staged,
-    }
-
-
 def _receipt(
     *,
     root: Path,
@@ -243,6 +236,8 @@ def _receipt(
     result: dict[str, Any],
     outer: dict[str, Any],
     inner: dict[str, Any],
+    inner_usage: dict[str, int],
+    inner_cost_usd: float,
     evidence_files: dict[str, Path],
     fixture: Path,
     task: Path,
@@ -262,8 +257,8 @@ def _receipt(
         "proof": "installed_skill_dogfood",
         "engine": "meta_harness",
         "policy": {
-            "target_model": release.TARGET_MODEL,
-            "reasoning_effort": release.REASONING_EFFORT,
+            "target_model": TARGET_MODEL,
+            "reasoning_effort": REASONING_EFFORT,
             "sandbox": True,
             "max_evals": MAX_EVALS,
             "stop_at_score": 1.0,
@@ -290,11 +285,11 @@ def _receipt(
         },
         "usage": {
             "outer_codex": outer["usage"],
-            "optimizer_codex": inner["usage"],
+            "optimizer_codex": inner_usage,
         },
         "cost": {
             "outer_estimated_usd": outer["estimated_cost_usd"],
-            "optimizer_estimated_usd": inner["estimated_cost_usd"],
+            "optimizer_estimated_usd": inner_cost_usd,
             "status": inner["cost_status"],
             "source": "codex_terminal_usage_and_adapter_invocation_journal",
         },
@@ -320,7 +315,7 @@ def _receipt(
             "codex_thread_id": inner["codex_thread_id"],
             "resume": inner["resume"],
         },
-        "hashes": {name: release.sha256_file(path) for name, path in files.items()},
+        "hashes": hash_files(files),
         "receipt_path": str(root / "installed-skill-dogfood-receipt.json"),
     }
 
@@ -329,7 +324,8 @@ def run_dogfood(output_dir: Path) -> dict[str, Any]:
     if output_dir.exists():
         raise ValueError("dogfood output directory must be new")
     output_dir.mkdir(parents=True)
-    skill = release.skill_dir()
+    skill = installed_skill_path()
+    provenance = installed_provenance(skill, REPOSITORY_ROOT, _project_version())
     state_dir = (
         Path(os.environ["HOME"]).expanduser()
         / ".cache"
@@ -337,16 +333,16 @@ def run_dogfood(output_dir: Path) -> dict[str, Any]:
         / "runs"
         / f"installed-skill-{uuid.uuid4().hex}"
     )
-    release.require_unique_state_dir(state_dir)
-    environment, staged = release.stage_and_preflight(skill, "meta_harness", state_dir)
+    require_unique_state_dir(state_dir)
+    environment, staged = stage_and_preflight(skill, "meta_harness", state_dir)
     if (
         environment.get("CODEX_ADAPTER_MAX_INVOCATIONS") != "1"
         or environment.get("CODEX_ADAPTER_PRE_SUBMISSION_RETRIES") != "0"
     ):
         raise ValueError("installed skill dogfood runtime policy is not fail-closed")
-    if release.authentication_mode(environment) != "chatgpt_login":
+    if authentication_mode(environment) != "chatgpt_login":
         raise ValueError("installed skill dogfood requires staged ChatGPT login")
-    if any(environment.get(name) for name in release.API_KEY_NAMES):
+    if any(environment.get(name) for name in API_KEY_NAMES):
         raise ValueError("installed skill dogfood cannot expose API keys")
     fixture, task = _write_fixture(output_dir)
     _task_fixture(fixture)
@@ -358,7 +354,7 @@ def run_dogfood(output_dir: Path) -> dict[str, Any]:
             "DOGFOOD_WORK_DIR": str(output_dir),
         }
     )
-    adapter = release._load_module(
+    adapter = _load_module(
         "installed_skill_dogfood_adapter",
         skill / "scripts" / "codex_claude_adapter.py",
     )
@@ -374,12 +370,28 @@ def run_dogfood(output_dir: Path) -> dict[str, Any]:
         adapter,
     )
     outer_terminal = output_dir / "outer-terminal.json"
-    _atomic_json(outer_terminal, outer)
-    inner, evidence_files = _inner_evidence(state_dir)
+    write_verified_receipt(outer_terminal, outer)
+    evidence = read_adapter_evidence(
+        state_dir,
+        target_model=TARGET_MODEL,
+        reasoning_effort=REASONING_EFFORT,
+        expected_invocations=1,
+    )
+    inner = evidence.mappings[0]
+    if inner["resume"]:
+        raise ValueError("dogfood inner invocation unexpectedly resumed")
+    evidence_files = {
+        "invocation": evidence.invocation_paths[0],
+        "session": evidence.session_paths[0],
+    }
     evidence_files["outer_terminal"] = outer_terminal
     result = _load_result(result_path)
     _validate_result(result)
-    source = _source(skill, staged)
+    source = {
+        **provenance,
+        "gepa_version": importlib.metadata.version("gepa"),
+        **staged,
+    }
     receipt = _receipt(
         root=output_dir,
         skill=skill,
@@ -387,15 +399,15 @@ def run_dogfood(output_dir: Path) -> dict[str, Any]:
         result=result,
         outer=outer,
         inner=inner,
+        inner_usage=evidence.usage,
+        inner_cost_usd=evidence.estimated_cost_usd,
         evidence_files=evidence_files,
         fixture=fixture,
         task=task,
     )
     receipt["duration_ms"] = round((time.monotonic() - started) * 1000)
     receipt_path = Path(receipt["receipt_path"])
-    _atomic_json(receipt_path, receipt)
-    if json.loads(receipt_path.read_text(encoding="utf-8")) != receipt:
-        raise RuntimeError("persisted dogfood receipt does not match the run")
+    write_verified_receipt(receipt_path, receipt)
     return receipt
 
 
@@ -422,7 +434,7 @@ def main(argv: list[str] | None = None) -> int:
                 "proof": "installed_skill_dogfood",
                 "error_type": type(exc).__name__,
             }
-            _atomic_json(
+            write_verified_receipt(
                 args.output_dir / "installed-skill-dogfood-receipt.json",
                 failure,
             )
