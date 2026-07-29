@@ -24,6 +24,17 @@ per-invocation hard-budget contract. A paid termination probe would still be
 unbounded by the requested contract and must not run. Revisit this decision only
 when Codex exposes both guarantees.
 
+## v0.3.0 beta decision
+
+The installed Luna-high dogfood was deferred without making a paid call. The
+beta relies on free Bubblewrap integration and clean-install proof. Its release
+runner limits each engine to one proposer iteration, three evaluations, a
+600-second deadline, and zero retries. Engines must run serially.
+
+These controls bound work and duration; they do not enforce a USD ceiling.
+Installed live dogfood remains an explicit release limitation until a
+provider-enforced limit is configured or Codex exposes a per-invocation control.
+
 Evidence:
 
 - [Codex CLI command reference](https://learn.chatgpt.com/docs/developer-commands.md?surface=cli#cli-codex-exec)
