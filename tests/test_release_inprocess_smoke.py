@@ -25,7 +25,7 @@ def _installed_skill(tmp_path: Path) -> Path:
     (skill / "SKILL.md").write_text("# installed\n", encoding="utf-8")
     manifest = plugin / ".codex-plugin" / "plugin.json"
     manifest.parent.mkdir()
-    manifest.write_text('{"version":"0.3.1"}\n', encoding="utf-8")
+    manifest.write_text('{"version":"0.3.2"}\n', encoding="utf-8")
     scripts = skill / "scripts"
     scripts.mkdir()
     (scripts / "codex_lm.py").write_text("# driver\n", encoding="utf-8")
@@ -152,6 +152,14 @@ def test_installed_gepa_commit_comes_from_direct_url_metadata(
     )
 
     assert smoke._installed_vcs_commit("gepa") == commit
+
+
+def test_release_commit_uses_exported_archive_metadata(tmp_path: Path) -> None:
+    commit = "a" * 40
+    (tmp_path / "release").mkdir()
+    (tmp_path / "release" / "COMMIT").write_text(commit, encoding="utf-8")
+
+    assert smoke._git_commit(tmp_path) == commit
 
 
 def test_smoke_requires_installed_plugin(

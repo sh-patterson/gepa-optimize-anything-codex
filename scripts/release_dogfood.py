@@ -338,9 +338,19 @@ def _git_commit(path: Path) -> str:
         text=True,
     )
     commit = completed.stdout.strip()
-    if completed.returncode != 0 or len(commit) != 40:
-        raise RuntimeError(f"cannot resolve git commit for {path}")
-    return commit
+    if completed.returncode == 0 and len(commit) == 40:
+        return commit
+    try:
+        archived_commit = (path / "release" / "COMMIT").read_text(
+            encoding="utf-8"
+        ).strip()
+    except OSError as exc:
+        raise RuntimeError(f"cannot resolve git commit for {path}") from exc
+    if len(archived_commit) == 40 and all(
+        character in "0123456789abcdef" for character in archived_commit
+    ):
+        return archived_commit
+    raise RuntimeError(f"cannot resolve git commit for {path}")
 
 
 def _repository_root(path: Path) -> Path:
@@ -603,8 +613,8 @@ def run_release(
             **staged,
         }
         auth_mode = authentication_mode(environment)
-        if skill_version == "0.3.1" and auth_mode != "chatgpt_login":
-            raise ValueError("v0.3.1 release proof requires staged ChatGPT login")
+        if auth_mode != "chatgpt_login":
+            raise ValueError("release proof requires staged ChatGPT login")
         manifest = root / "run_manifest.json"
         _atomic_json(manifest, {"policy": release_policy(engine), "source": source})
         result_path = root / "child_result.json"

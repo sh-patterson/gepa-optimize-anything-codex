@@ -110,7 +110,7 @@ RUN_CODEX_LIVE=1 python -m pytest -q \
 The release dogfood runner makes live calls from an installed plugin. Set
 `GEPA_CODEX_SKILL_DIR` to that installed skill; the runner rejects the source
 checkout, marketplace source copy, version mismatch, reused state, and missing
-plugin manifest. For the v0.3.1 proof, first stage a ChatGPT login with
+plugin manifest. For release proof, first stage a ChatGPT login with
 `sandbox_runtime.py login` and leave `CODEX_API_KEY` and `OPENAI_API_KEY`
 unset. The runner caps the adapter at one invocation and exits nonzero when its
 evidence is incomplete. Run each engine separately:

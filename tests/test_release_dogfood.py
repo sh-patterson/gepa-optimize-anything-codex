@@ -217,7 +217,7 @@ def test_cli_requires_explicit_live_run_authorization(
     assert "RUN_CODEX_LIVE=1" in capsys.readouterr().err
 
 
-def _installed_skill(tmp_path: Path, version: str = "0.3.1") -> Path:
+def _installed_skill(tmp_path: Path, version: str = "0.3.2") -> Path:
     plugin = tmp_path / "installed" / "gepa-optimize-anything"
     skill = plugin / "skills" / "gepa-optimize-anything-codex"
     skill.mkdir(parents=True)
@@ -285,6 +285,14 @@ def test_installed_gepa_commit_comes_from_direct_url_metadata(
     )
 
     assert release_dogfood._installed_vcs_commit("gepa") == commit
+
+
+def test_release_commit_uses_exported_archive_metadata(tmp_path: Path) -> None:
+    commit = "a" * 40
+    (tmp_path / "release").mkdir()
+    (tmp_path / "release" / "COMMIT").write_text(commit, encoding="utf-8")
+
+    assert release_dogfood._git_commit(tmp_path) == commit
 
 
 def test_failure_receipt_is_persisted_for_timeout(tmp_path: Path) -> None:

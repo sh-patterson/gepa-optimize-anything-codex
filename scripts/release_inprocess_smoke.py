@@ -41,9 +41,19 @@ def _git_commit(path: Path) -> str:
         text=True,
     )
     commit = completed.stdout.strip()
-    if completed.returncode != 0 or len(commit) != 40:
-        raise RuntimeError("cannot resolve release runner commit")
-    return commit
+    if completed.returncode == 0 and len(commit) == 40:
+        return commit
+    try:
+        archived_commit = (path / "release" / "COMMIT").read_text(
+            encoding="utf-8"
+        ).strip()
+    except OSError as exc:
+        raise RuntimeError("cannot resolve release runner commit") from exc
+    if len(archived_commit) == 40 and all(
+        character in "0123456789abcdef" for character in archived_commit
+    ):
+        return archived_commit
+    raise RuntimeError("cannot resolve release runner commit")
 
 
 def _installed_vcs_commit(package: str) -> str:
