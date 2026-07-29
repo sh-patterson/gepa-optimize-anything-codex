@@ -43,14 +43,16 @@ block, and old-API keys (`claude_code_agent`, top-level `reflection_lm_kwargs`, 
 `background` inside `engine_config`) now crash. See `api.md` for each backend's valid keys.
 
 ## 6. Agentic backends have launch-time prerequisites
-`autoresearch` / `meta_harness` `subprocess.Popen(["claude", ...])`. A missing `claude` CLI — or, on
-Linux, a missing `bwrap` (bubblewrap) while the default `sandbox=True` is in effect — aborts the run
-at launch with a boxed message and install instructions (`npm install -g @anthropic-ai/claude-code`;
-`sudo apt/dnf install bubblewrap`). An *unauthenticated* CLI or a missing `jq` (used by
-autoresearch's generated `eval.sh`) still surfaces only mid-run. An explicit `--no-sandbox` run is
-unconfined (loud warning) — so run `scripts/preflight.py` first either way.
+`autoresearch` / `meta_harness` invoke a command named `claude`. This port stages that compatibility
+launcher inside GEPA's Bubblewrap jail and invokes Codex. A missing staged launcher, Codex CLI,
+`bwrap`, `jq`, or sandbox authentication fails preflight before the optimizer starts. An explicit
+`--no-sandbox` run is unconfined (loud warning); run
+`python "$SKILL_DIR/scripts/preflight.py" --engine <engine>` first either way.
 
-## 7. Give runs a real stop condition (`stop_at_score` / `max_token_cost`)
+## 7. Give runs a real stop condition (`stop_at_score` / bounded work)
+
+Sandboxed agentic runs require `CODEX_API_KEY`; only explicit
+`--no-sandbox` runs may rely on `codex login` or `OPENAI_API_KEY`.
 `max_evals` caps eval calls, but two situations still burn money or time past the point of useful
 work:
 - **The metric has a ceiling** and a candidate reaches it — without `stop_at_score` the run keeps

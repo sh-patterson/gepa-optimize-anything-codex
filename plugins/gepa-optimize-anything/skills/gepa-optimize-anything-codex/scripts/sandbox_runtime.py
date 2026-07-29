@@ -19,7 +19,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 LAUNCHER_SOURCE = SCRIPT_DIR / "claude"
 ADAPTER_SOURCE = SCRIPT_DIR / "codex_claude_adapter.py"
 RUNTIME_NAME = "gepa-optimize-anything-codex"
-NPM_INSTALL_FIX = 'npm install --prefix "$HOME/.local" @openai/codex'
+NPM_INSTALL_FIX = 'npm install --prefix "$HOME/.local" @openai/codex@0.146.0'
 NPM_PATH_FIX = 'export PATH="$HOME/.local/node_modules/.bin:$PATH"'
 SANDBOX_PYTHON = Path("/usr/bin/python3")
 

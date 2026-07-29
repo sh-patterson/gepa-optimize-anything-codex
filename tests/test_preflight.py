@@ -64,6 +64,15 @@ def test_launcher_check_rejects_an_unrelated_claude_command(tmp_path):
     assert preflight._is_bundled_launcher(str(preflight.EXPECTED_LAUNCHER))
 
 
+def test_launcher_check_accepts_the_staged_runtime_launcher(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    staged = tmp_path / preflight.STAGED_LAUNCHER_RELATIVE
+    staged.parent.mkdir(parents=True)
+    staged.write_text("#!/bin/sh\n", encoding="utf-8")
+
+    assert preflight._is_bundled_launcher(str(staged))
+
+
 def test_state_dir_check_requires_a_writable_directory(tmp_path):
     assert not preflight._state_dir_writable(None)
     assert preflight._state_dir_writable(str(tmp_path / "state"))

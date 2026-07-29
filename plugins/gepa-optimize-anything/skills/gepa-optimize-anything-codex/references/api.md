@@ -55,7 +55,7 @@ you want an unbiased number to report; skip it otherwise.
 | `engine` | `"gepa"` | `"gepa"` / `"autoresearch"` / `"meta_harness"` (or `"best_of_n"`, a baseline), or a constructed `Engine` instance (custom engines can be added via `gepa.oa.registry.register_engine`). |
 | `name` | `None` | run id (logging + default output dir). Auto-generated (`<engine>-<uuid>-<timestamp>`) if `None`. |
 | `max_evals` | **`100`** | server-side cap on eval calls. `None` = unlimited. Size it — the default is rarely right (see SKILL.md). |
-| `max_token_cost` | `None` | USD cap on the engine's **own** optimizer-LLM spend (reflection/agent). Enforced by the engine (gepa: `max_reflection_cost` stopper; agent engines: `--max-budget-usd`), not the eval server. |
+| `max_token_cost` | `None` | USD cap on the engine's **own** optimizer-LLM spend for backends that can enforce it (for example, `gepa` via `max_reflection_cost`). The Codex `autoresearch` and `meta_harness` adapters reject this field before launch because they cannot enforce a per-invocation USD ceiling. |
 | `max_concurrency` | `8` | eval-server thread-pool size. |
 | `output_dir` | `None` | where the eval server writes per-eval JSON, `progress_log.jsonl`, `summary.json`. `None` → `outputs/optimize_anything/<task>/<engine>/<timestamp>/`. |
 | `run_dir` | `None` | engine workspace (gepa run dir / agent work dir; with `engine.write_agent_state=True` the gepa backend writes an agent-readable `iterations/` + `pareto/` tree here). Distinct from `output_dir`. `None` → subprocess engines use a tempdir; set it to persist artifacts. |
@@ -92,7 +92,8 @@ changing one argument. Each backend parses `engine_config` into its own typed da
 | `meta_harness` | a Codex subprocess reads frontier/history and writes `pending_eval.json` candidates; the engine benchmarks each | subprocess | Codex adapter `claude` on PATH + Codex auth |
 | `best_of_n` *(baseline)* | independent single-shot samples from one LLM; keep the best — no feedback, no history | in-process | LiteLLM creds for `model` (default `claude-sonnet-4-6`) |
 
-`scripts/preflight.py` checks a backend's prerequisites before a long run.
+Run `python "$SKILL_DIR/scripts/preflight.py" --engine <engine>` to check a
+backend's prerequisites before a long run.
 
 ### `gepa` — `engine_config` is a `GEPAConfig`-shaped dict (1-to-1 passthrough)
 The dict is passed to `gepa.gepa_launcher.GEPAConfig(**engine_config)`; valid top-level keys are
@@ -109,8 +110,6 @@ engine_config = {
             "reasoning_effort": "high"
         },  # litellm kwargs (temperature, thinking, …)
         "reflection_minibatch_size": 5,  # default: 1 single-task, 3 otherwise
-        # "custom_candidate_proposer": ClaudeCodeAgentProposer(...),  # replace the reflection LM with
-        #                                # a Codex proposer (from gepa.oa.proposers)
         # "reflection_strategy": ...,    # advanced: a ReflectionLM impl owning how reflection is called
     },
     "engine": {  # -> EngineConfig (all optional, sensible defaults)
@@ -147,10 +146,11 @@ e.g. **candidate-selection**, **acceptance-criterion**, **batch-sampling**, **ca
 | `max_thinking_tokens` | `None` | fixed thinking-token budget (`MAX_THINKING_TOKENS`). |
 
 The engine lays out a work dir (`program.md`, `candidate.txt`, `best_candidate.txt`, `eval.sh`) and
-launches `claude --print`; `eval.sh` POSTs candidates to the eval server, which enforces the budget
-server-side (HTTP 429 on exhaustion) and caps LLM spend via `--max-budget-usd` (from
-`max_token_cost`). Train and val are presented to the agent as one combined pool; the test set is
-unreachable over HTTP.
+launches `claude --print`; `eval.sh` POSTs candidates to the eval server, which enforces the
+evaluation budget server-side (HTTP 429 on exhaustion). In this Codex port, `max_token_cost` is
+rejected before launch; bound agentic work with `max_evals`, `max_iterations`,
+`max_candidates_per_iter`, `stop_at_score`, and the adapter invocation cap. Train and val are
+presented to the agent as one combined pool; the test set is unreachable over HTTP.
 
 ### `meta_harness` — `engine_config` → `MetaHarnessConfig`
 | key | default | meaning |
@@ -230,10 +230,10 @@ result = optimize_sequential(
     objective="...",
     configs=[
         OptimizeAnythingConfig(
-            engine="autoresearch", max_evals=100, sandbox=True
+            engine="autoresearch", max_evals=10, sandbox=True
         ),
         OptimizeAnythingConfig(
-            engine="gepa", max_evals=200
+            engine="gepa", max_evals=100
         ),  # refines autoresearch's best
     ],
 )

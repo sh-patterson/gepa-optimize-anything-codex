@@ -16,7 +16,7 @@ For every `autoresearch` or `meta_harness` run:
 
 1. Resolve `SKILL_DIR` to the absolute directory containing this `SKILL.md`. Use the installed skill path supplied by Codex. Do not ask the user to find the plugin cache.
 2. Install pinned GEPA if the active Python environment does not already provide it.
-3. Run `npm install --prefix "$HOME/.local" @openai/codex`, prepend `"$HOME/.local/node_modules/.bin"` to `PATH`, and set `CODEX_API_KEY`.
+3. Run `npm install --prefix "$HOME/.local" @openai/codex@0.146.0`, prepend `"$HOME/.local/node_modules/.bin"` to `PATH`, and set `CODEX_API_KEY`.
 4. Stage the adapter with `RUNTIME_BIN="$(python "$SKILL_DIR/scripts/sandbox_runtime.py" stage)"`.
 5. Prepend `RUNTIME_BIN` to `PATH`. Set `CODEX_HOME` and a unique `CODEX_ADAPTER_STATE_DIR` beneath `~/.cache/gepa-optimize-anything-codex`.
 6. Run `"$SKILL_DIR/scripts/preflight.py" --engine <engine>`.
@@ -24,9 +24,9 @@ For every `autoresearch` or `meta_harness` run:
 
 ## Codex adapter limits
 
-The agentic compatibility command supports Linux only. Keep GEPA's default `sandbox=True`. Staging puts the adapter under Bubblewrap's read-only `~/.local` bind. Keep `CODEX_HOME` and adapter state under its writable `~/.cache` bind. Use `CODEX_API_KEY`; the jail does not expose the normal Codex login directory.
+The agentic compatibility command supports Linux only. Keep GEPA's default `sandbox=True`. Staging puts the adapter under Bubblewrap's read-only `~/.local` bind. Keep `CODEX_HOME` and adapter state under its writable `~/.cache` bind. Use `CODEX_API_KEY`; the jail does not expose the normal Codex login directory. An explicit `--no-sandbox` preflight is the opt-out path for hosts that intentionally use `codex login` or `OPENAI_API_KEY`.
 
-The adapter maps the pinned GEPA default `claude-sonnet-4-6` to `gpt-5.6-luna`. It rejects other source models before starting Codex. It uses an existing `codex login` when no API key is set, although no-call preflight cannot prove that login's token is fresh. `CODEX_API_KEY` or `OPENAI_API_KEY` selects the documented noninteractive path. The adapter preserves the existing `CODEX_HOME`; it does not copy auth into its session-state directory.
+The adapter maps the pinned GEPA default `claude-sonnet-4-6` to `gpt-5.6-luna`. It rejects other source models before starting Codex. Sandboxed runs require `CODEX_API_KEY`; the adapter preserves the existing `CODEX_HOME` and does not copy auth into its session-state directory. Unsandboxed runs may use an existing `codex login` or `OPENAI_API_KEY`.
 
 Do not set `max_token_cost` with `autoresearch` or `meta_harness`. GEPA passes it as `--max-budget-usd`; the adapter rejects that flag before spawning Codex because it cannot enforce a USD cap. Callers must explicitly set `max_evals=10` and, for `meta_harness`, `max_iterations=3` plus `max_candidates_per_iter=3`. The adapter alone enforces a default of four atomic starts per unique state directory. It retries once only when Codex is known not to have started, and that retry consumes an invocation slot. It never retries an ambiguous, usage-bearing, or completed call. Set `CODEX_ADAPTER_MAX_INVOCATIONS` to a different positive integer to override the atomic start cap; a claimed slot remains consumed after failure. Set `stop_at_score` whenever the metric has a known ceiling. A host timeout is an optional emergency stop, not a default budget. `total_cost_usd` is a conservative standard-tier estimate from observed tokens, not provider billing. The adapter accepts pinned GEPA's exact web-tool denial, disables Codex's standalone web search, and rejects unknown policy values plus `--settings` before Codex starts. Shell network access remains available, matching GEPA's unsandboxed agent path.
 
@@ -103,7 +103,7 @@ pip install "gepa[full] @ git+https://github.com/sh-patterson/gepa.git@41ca7c3a3
 # [full] pulls cloudpickle — needed to pickle closure evaluators for
                            # parallel workers / opt-in evaluation caching; plain `pip install gepa`
                            # can fail there when your evaluator closes over data.
-# Proposer LLM: upstream GEPA defaults to "openai/gpt-5.1". For a Codex-first run, explicitly use
+# Proposer LLM: upstream GEPA defaults to "openai/gpt-5.1". For an in-process Codex-first run, explicitly use
 # "openai/gpt-5.6-luna" with reasoning_effort="high", as shown below. Set OPENAI_API_KEY. You can
 # also pass another LiteLLM id or any callable implementing GEPA's LM protocol.
 # Agentic backends (autoresearch, meta_harness) additionally need the Codex CLI and this skill's
@@ -127,8 +127,8 @@ export CODEX_ADAPTER_STATE_DIR="$(mktemp -d "$HOME/.cache/gepa-optimize-anything
    baseline, or a constructed `Engine` instance.
 4. **Budget** — `max_evals` (server-side eval-call cap, **default 100**) and, for in-process
    backends, `max_token_cost` (USD cap on proposer-LLM spend). This Codex adapter rejects
-   `max_token_cost` for `autoresearch` and `meta_harness`; explicitly set their bounded GEPA values,
-   `stop_at_score`, and an account spend limit. **Size `max_evals` for many proposal rounds, not
+   `max_token_cost` for `autoresearch` and `meta_harness`; those agentic paths use the explicit
+   bounded values below. For in-process runs, **size `max_evals` for many proposal rounds, not
    one** (see below) — this is the most common way agents misuse this API.
 
 ### Codex agentic caller configuration
@@ -156,7 +156,7 @@ non-improving slices rotate to a fresh engine. A single-engine run uses its hard
 caps instead; upstream does not expose a per-engine plateau stopper.
 
 ## Sizing the valset and the budget (read this — the #1 mistake)
-`max_evals` is the *main* control over how long the optimizer runs. Leave it at the default (100)
+`max_evals` is the *main* control over how long an in-process optimizer runs. Leave it at the default (100)
 with a large valset, or set it too low, and the run stops after a **single proposal**, then reports
 a "best candidate" that looks fine but is barely optimized.
 
@@ -172,7 +172,7 @@ a "best candidate" that looks fine but is barely optimized.
   single-task    (no dataset/valset): max_evals ≳ 15–20                  # 1 eval per candidate, so this
                                                                          #   IS the number of proposals
   ```
-  The constant is the same everywhere — **let the backend propose AND evaluate ~15–20 candidates**
+The constant is the same everywhere for the in-process `gepa` and `best_of_n` backends — **let the backend propose AND evaluate ~15–20 candidates**
   (more if you can afford it). Anything much less and the run tries only a couple of candidates —
   i.e. it's barely optimizing. (This arithmetic is exact for the gepa backend — and the best_of_n
   baseline — which score every candidate on the full selection set; the agentic backends decide
@@ -270,7 +270,7 @@ print(
    Validate it with a 1-call test before a long run.
 5. **Set a budget** (`max_evals` sized per above; add `max_token_cost` only for a backend that can
    enforce it) plus `stop_at_score` when the metric has a ceiling.
-6. **Run `python scripts/preflight.py`** to fail fast on missing creds / CLI before a long run.
+6. **Run `python "$SKILL_DIR/scripts/preflight.py" --engine <engine>`** to fail fast on missing creds / CLI before a long run.
 7. **Launch**, watch the first 1-2 evals (the eval→model→score chain), then let it run.
 8. **Read `result.best_candidate` and `run_dir/`** (and `result.metadata["test_score"]` if you
    passed a `test_set`).
@@ -293,7 +293,7 @@ These silently degrade *results* — skim before launching:
 - **`engine_config` is validated strictly per backend** — an unknown key (including a leftover key
   from a different backend after swapping `engine=`) raises `TypeError` at construction. Swapping
   `engine=` means swapping the `engine_config` block. → `references/api.md`.
-- **Agentic backends (`autoresearch`, `meta_harness`) shell out to a command named `claude`.** This port stages that command inside GEPA's Linux Bubblewrap jail and invokes Codex. Run `scripts/preflight.py --engine autoresearch` before a real run.
+- **Agentic backends (`autoresearch`, `meta_harness`) shell out to a command named `claude`.** This port stages that command inside GEPA's Linux Bubblewrap jail and invokes Codex. Run `python "$SKILL_DIR/scripts/preflight.py" --engine <engine>` before a real run.
 
 ## Reference files (load as needed)
 - `references/api.md` — `OptimizeAnythingConfig`, the backends and their typed `engine_config`

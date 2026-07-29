@@ -12,10 +12,13 @@ MARKETPLACE = ROOT / ".agents" / "plugins" / "marketplace.json"
 
 def test_skill_has_required_files_and_local_links():
     skill_text = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+    agent_policy = (SKILL / "agents" / "openai.yaml").read_text(encoding="utf-8")
 
     assert skill_text.startswith("---\nname: gepa-optimize-anything-codex\n")
     assert "\ndescription:" in skill_text.split("---", 2)[1]
     assert (SKILL / "agents" / "openai.yaml").is_file()
+    assert "products:\n    - CODEX" in agent_policy
+    assert "allow_implicit_invocation: true" in agent_policy
     assert (SKILL / "scripts" / "claude").is_file()
     assert (SKILL / "scripts" / "codex_claude_adapter.py").is_file()
     assert (SKILL / "scripts" / "preflight.py").is_file()
@@ -26,6 +29,8 @@ def test_skill_has_required_files_and_local_links():
         "writing_evaluators.md",
     ):
         assert (SKILL / "references" / name).is_file()
+    assert (PLUGIN / "LICENSE").is_file()
+    assert (PLUGIN / "UPSTREAM.md").is_file()
 
 
 def test_marketplace_points_to_the_skills_only_plugin():
@@ -79,3 +84,19 @@ def test_codex_agentic_caller_limits_and_adapter_default_are_distinct():
         assert "max_iterations=3" in document
         assert "max_candidates_per_iter=3" in document
         assert "adapter alone enforces a default of four atomic starts" in document
+
+
+def test_supported_codex_cli_version_is_pinned_consistently():
+    expected_install = 'npm install --prefix "$HOME/.local" @openai/codex@0.146.0'
+    runtime = (
+        SKILL / "scripts" / "sandbox_runtime.py"
+    ).read_text(encoding="utf-8")
+    workflow = (ROOT / ".github" / "workflows" / "verify.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert expected_install in (ROOT / "README.md").read_text(encoding="utf-8")
+    assert expected_install in (SKILL / "SKILL.md").read_text(encoding="utf-8")
+    assert expected_install in runtime
+    assert "@openai/codex@0.146.0" in workflow
+    assert 'grep -F "0.146.0"' in workflow

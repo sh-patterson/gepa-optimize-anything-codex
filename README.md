@@ -26,9 +26,10 @@ Start a new Codex task after installation. Invoke
 improve.
 
 When invoked, the skill directs Codex to install pinned GEPA when needed and
-launch it with the bundled adapter first on `PATH`. Agentic runs require Linux,
-the Codex CLI, `jq`, and either `codex login`, `CODEX_API_KEY`, or
-`OPENAI_API_KEY`.
+launch it with the bundled adapter first on `PATH`. This plugin targets Codex
+CLI and Codex desktop. Agentic runs require Linux, Bubblewrap, the Codex CLI,
+`jq`, and `CODEX_API_KEY`; in-process GEPA and `best_of_n` do not require that
+agentic jail.
 
 The adapter translates GEPA's upstream `claude-sonnet-4-6` default to
 `gpt-5.6-luna` with `high` reasoning. It also accepts the target model name
@@ -41,7 +42,7 @@ long-context multiplier; it is not provider billing.
 
 The compatibility command is Linux-only and uses GEPA's default Bubblewrap
 sandbox. Install Codex with
-`npm install --prefix "$HOME/.local" @openai/codex`, prepend
+`npm install --prefix "$HOME/.local" @openai/codex@0.146.0`, prepend
 `~/.local/node_modules/.bin` to `PATH`, set `CODEX_API_KEY`, and stage the
 adapter with `sandbox_runtime.py stage`. Run preflight before starting an
 agentic engine. Codex uses writable homes beneath `~/.cache`.
@@ -66,8 +67,14 @@ override the adapter ceiling. Set
 an optional emergency stop, not a default run budget.
 
 Set an external spend limit in the OpenAI account before a paid run. These
-controls bound work but do not satisfy GEPA's per-invocation hard-USD contract.
-The `v1.0.0` hard-budget gate remains [externally blocked](HARD_BUDGET.md).
+controls complement the bounded work controls but are not per-invocation USD
+enforcement. The supported v1 contract is bounded work, not an exact dollar
+ceiling.
+
+The default sandbox cannot use a normal `codex login` token or an
+`OPENAI_API_KEY`, because those credentials are outside the jail. An explicit
+`--no-sandbox` preflight is the opt-out path for hosts that intentionally use
+those credentials.
 
 The adapter accepts pinned GEPA's exact
 `--disallowedTools=WebFetch,WebSearch`, `--output-format json`, and

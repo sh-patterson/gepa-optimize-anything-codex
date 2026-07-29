@@ -32,6 +32,9 @@ problems: list[str] = []
 # sampling model defaults to claude-sonnet-4-6 (see references/api.md).
 DEFAULT_LM_BY_ENGINE = {"gepa": "openai/gpt-5.1", "best_of_n": "claude-sonnet-4-6"}
 EXPECTED_LAUNCHER = Path(__file__).with_name("claude").resolve()
+STAGED_LAUNCHER_RELATIVE = Path(
+    ".local/share/gepa-optimize-anything-codex/bin/claude"
+)
 REQUIRED_CODEX_EXEC_FLAGS = {
     "--ignore-user-config",
     "--json",
@@ -103,7 +106,10 @@ def _sandbox_auth_available() -> bool:
 
 def _is_bundled_launcher(command: str) -> bool:
     try:
-        return Path(command).resolve() == EXPECTED_LAUNCHER
+        candidate = Path(command).resolve()
+        home = Path(os.environ.get("HOME", str(Path.home()))).expanduser()
+        staged = (home / STAGED_LAUNCHER_RELATIVE).resolve()
+        return candidate in {EXPECTED_LAUNCHER, staged}
     except OSError:
         return False
 
