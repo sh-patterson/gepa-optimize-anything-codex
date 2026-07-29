@@ -21,7 +21,7 @@ from typing import Any, Callable
 ENGINES = frozenset({"autoresearch", "meta_harness"})
 HOST_TIMEOUT_SECONDS = 600
 SEED_CANDIDATE = "Return RED."
-TARGET_CANDIDATE = "Return BLUE."
+TARGET_TOKEN = "BLUE"
 TARGET_MODEL = "gpt-5.6-luna"
 REASONING_EFFORT = "high"
 MAX_ADAPTER_INVOCATIONS = 1
@@ -455,7 +455,7 @@ def stage_and_preflight(
 
 
 def _evaluate(candidate: str, _example: object) -> tuple[float, dict[str, Any]]:
-    passed = TARGET_CANDIDATE in candidate
+    passed = TARGET_TOKEN in candidate
     return float(passed), {
         "passed": passed,
         "feedback": "Candidate must contain BLUE." if not passed else "Passed.",
@@ -539,7 +539,7 @@ def _session_matches(path: Path, record: dict[str, Any]) -> None:
 
 
 def _valid_result(result: dict[str, Any]) -> None:
-    if TARGET_CANDIDATE not in result["best_candidate"]:
+    if TARGET_TOKEN not in result["best_candidate"]:
         raise ValueError("best candidate does not contain BLUE")
     if result["best_score"] != 1.0:
         raise ValueError("best score is not 1.0")
