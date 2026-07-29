@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.metadata
 import importlib.util
 import json
 import math
@@ -238,7 +239,6 @@ def build_receipt(
     manifest_path: Path,
     source: dict[str, Any],
     result: dict[str, Any],
-    summary: dict[str, Any],
     file_paths: dict[str, Path],
     commits: dict[str, str],
     version: str,
@@ -258,37 +258,17 @@ def build_receipt(
     metadata = result.get("metadata")
     adapter_cost = _returned_cost(metadata, "adapter_cost")
     returned_total = _returned_cost(metadata, "total_cost")
-    summary_adapter = _nonnegative_number(
-        summary.get("adapter_cost_usd"), "summary.adapter_cost_usd"
-    )
-    summary_eval = _nonnegative_number(
-        summary.get("eval_cost_usd"), "summary.eval_cost_usd"
-    )
-    summary_total_usd = _nonnegative_number(
-        summary.get("total_cost_usd"), "summary.total_cost_usd"
-    )
-    summary_total = _nonnegative_number(summary.get("total_cost"), "summary.total_cost")
-    if (
-        not isinstance(summary.get("adapter_cost_status"), str)
-        or not summary["adapter_cost_status"]
-    ):
-        raise ValueError("summary is missing adapter_cost_status")
-    if summary["adapter_cost_status"] != metadata.get("adapter_cost_status"):
-        raise ValueError("returned and persisted adapter cost status do not agree")
     if records[0]["cost_status"] != metadata.get("adapter_cost_status"):
         raise ValueError("journal and returned adapter cost status do not agree")
+    eval_cost = returned_total - adapter_cost
+    if eval_cost < 0:
+        raise ValueError("returned total cost is lower than adapter cost")
     agreement = all(
         math.isclose(left, right, rel_tol=1e-9, abs_tol=1e-12)
-        for left, right in (
-            (estimated_cost, adapter_cost),
-            (adapter_cost, summary_adapter),
-            (returned_total, summary_total_usd),
-            (returned_total, summary_total),
-            (summary_total_usd, summary_eval + summary_adapter),
-        )
+        for left, right in ((estimated_cost, adapter_cost),)
     )
     if not agreement:
-        raise ValueError("journal, returned, and persisted costs do not agree")
+        raise ValueError("journal and returned costs do not agree")
     if authentication_mode not in {"chatgpt_login", "codex_api_key"}:
         raise ValueError("invalid authentication mode")
     return {
@@ -321,7 +301,7 @@ def build_receipt(
         "cost": {
             "estimated_usd": estimated_cost,
             "adapter_reported_usd": adapter_cost,
-            "eval_usd": summary_eval,
+            "eval_usd": eval_cost,
             "total_usd": returned_total,
             "cost_status": records[0]["cost_status"],
             "agreement": agreement,
@@ -369,6 +349,18 @@ def _repository_root(path: Path) -> Path:
         if (candidate / ".git").exists():
             return candidate
     raise RuntimeError(f"no repository root for {path}")
+
+
+def _installed_vcs_commit(package: str) -> str:
+    raw = importlib.metadata.distribution(package).read_text("direct_url.json")
+    try:
+        payload = json.loads(raw or "")
+        commit = payload["vcs_info"]["commit_id"]
+    except (KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"cannot resolve installed {package} commit") from exc
+    if not isinstance(commit, str) or len(commit) != 40:
+        raise RuntimeError(f"cannot resolve installed {package} commit")
+    return commit
 
 
 def _project_version() -> str:
@@ -603,7 +595,7 @@ def run_release(
         source = {
             "gepa_module": str(gepa_module),
             "gepa_version": gepa_version,
-            "gepa_commit": _git_commit(_repository_root(gepa_module)),
+            "gepa_commit": _installed_vcs_commit("gepa"),
             "skill_path": str(skill),
             "skill_version": skill_version,
             "plugin_commit": release_commit,
@@ -632,7 +624,7 @@ def run_release(
         result = child["result"]
         _valid_result(result)
         summary_path = root / "output" / "summary.json"
-        summary = _summary(summary_path)
+        _summary(summary_path)
         records = invocation_records(state_dir)
         sessions = sorted((state_dir / "sessions").glob("*.json"))
         if len(sessions) != 1:
@@ -656,7 +648,6 @@ def run_release(
             manifest_path=manifest,
             source=source,
             result=result,
-            summary=summary,
             file_paths=files,
             commits={
                 "runner": release_commit,

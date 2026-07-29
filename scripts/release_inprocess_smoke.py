@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.metadata
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import time
@@ -25,6 +27,31 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: source.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _git_commit(path: Path) -> str:
+    completed = subprocess.run(
+        ["git", "-C", str(path), "rev-parse", "HEAD"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    commit = completed.stdout.strip()
+    if completed.returncode != 0 or len(commit) != 40:
+        raise RuntimeError("cannot resolve release runner commit")
+    return commit
+
+
+def _installed_vcs_commit(package: str) -> str:
+    raw = importlib.metadata.distribution(package).read_text("direct_url.json")
+    try:
+        payload = json.loads(raw or "")
+        commit = payload["vcs_info"]["commit_id"]
+    except (KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"cannot resolve installed {package} commit") from exc
+    if not isinstance(commit, str) or len(commit) != 40:
+        raise RuntimeError(f"cannot resolve installed {package} commit")
+    return commit
 
 
 def _installed_skill() -> tuple[Path, Path]:
@@ -245,6 +272,8 @@ def run_smoke(
             "plugin_version": json.loads(manifest.read_text(encoding="utf-8"))[
                 "version"
             ],
+            "repository_commit": _git_commit(REPOSITORY_ROOT),
+            "gepa_commit": _installed_vcs_commit("gepa"),
         },
         "hashes": {name: _sha256(path) for name, path in source_files.items()},
     }

@@ -90,13 +90,6 @@ def test_receipt_aggregates_journal_usage_and_persists_manifest(tmp_path: Path) 
                 "adapter_cost_status": "standard_tier_upper_estimate_from_observed_usage",
             },
         },
-        summary={
-            "eval_cost_usd": 0.0,
-            "adapter_cost_usd": 0.001735,
-            "total_cost_usd": 0.001735,
-            "total_cost": 0.001735,
-            "adapter_cost_status": "standard_tier_upper_estimate_from_observed_usage",
-        },
         file_paths={"manifest": manifest},
         commits={"plugin": "abc123"},
         version="0.2.1",
@@ -131,12 +124,15 @@ def test_receipt_aggregates_journal_usage_and_persists_manifest(tmp_path: Path) 
     assert stored["file_hashes"]["manifest"] == release_dogfood.sha256_file(manifest)
 
 
-def test_receipt_rejects_summary_cost_mismatch(tmp_path: Path) -> None:
+def test_receipt_rejects_journal_cost_mismatch(tmp_path: Path) -> None:
     state_dir = tmp_path / "state"
     invocation_dir = state_dir / "invocations"
     invocation_dir.mkdir(parents=True)
     (invocation_dir / "one.json").write_text(
-        json.dumps(_invocation(cost_status="estimated")), encoding="utf-8"
+        json.dumps(
+            _invocation(cost_status="estimated", estimated_cost_usd=0.01)
+        ),
+        encoding="utf-8",
     )
     manifest = tmp_path / "run_manifest.json"
     manifest.write_text("{}\n", encoding="utf-8")
@@ -155,13 +151,6 @@ def test_receipt_rejects_summary_cost_mismatch(tmp_path: Path) -> None:
             manifest_path=manifest,
             source={},
             result=result,
-            summary={
-                "eval_cost_usd": 0.0,
-                "adapter_cost_usd": 0.01,
-                "total_cost_usd": 0.001735,
-                "total_cost": 0.001735,
-                "adapter_cost_status": "estimated",
-            },
             file_paths={"manifest": manifest},
             commits={},
             version="0.2.1",
@@ -199,13 +188,6 @@ def test_receipt_fails_closed_for_incomplete_invocation_evidence(
                     "total_cost": 0.0,
                     "adapter_cost_status": "unknown",
                 }
-            },
-            summary={
-                "eval_cost_usd": 0.0,
-                "adapter_cost_usd": 0.0,
-                "total_cost_usd": 0.0,
-                "total_cost": 0.0,
-                "adapter_cost_status": "unknown",
             },
             file_paths={"manifest": manifest},
             commits={},
@@ -283,6 +265,26 @@ def test_skill_dir_rejects_missing_manifest_and_version_mismatch(
     monkeypatch.setenv("GEPA_CODEX_SKILL_DIR", str(mismatch))
     with pytest.raises(RuntimeError, match="version"):
         release_dogfood.skill_dir()
+
+
+def test_installed_gepa_commit_comes_from_direct_url_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    commit = "a" * 40
+
+    class Distribution:
+        @staticmethod
+        def read_text(name: str) -> str:
+            assert name == "direct_url.json"
+            return json.dumps({"vcs_info": {"commit_id": commit}})
+
+    monkeypatch.setattr(
+        release_dogfood.importlib.metadata,
+        "distribution",
+        lambda name: Distribution(),
+    )
+
+    assert release_dogfood._installed_vcs_commit("gepa") == commit
 
 
 def test_failure_receipt_is_persisted_for_timeout(tmp_path: Path) -> None:

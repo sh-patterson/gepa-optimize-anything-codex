@@ -70,6 +70,26 @@ def test_native_usage_requires_positive_model_tokens() -> None:
         smoke._native_usage([])
 
 
+def test_installed_gepa_commit_comes_from_direct_url_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    commit = "b" * 40
+
+    class Distribution:
+        @staticmethod
+        def read_text(name: str) -> str:
+            assert name == "direct_url.json"
+            return json.dumps({"vcs_info": {"commit_id": commit}})
+
+    monkeypatch.setattr(
+        smoke.importlib.metadata,
+        "distribution",
+        lambda name: Distribution(),
+    )
+
+    assert smoke._installed_vcs_commit("gepa") == commit
+
+
 def test_smoke_requires_platform_key_and_installed_plugin(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -105,6 +125,7 @@ def test_smoke_writes_sanitized_installed_receipt(
 ) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setenv("GEPA_CODEX_SKILL_DIR", str(_installed_skill(tmp_path)))
+    monkeypatch.setattr(smoke, "_installed_vcs_commit", lambda _package: "c" * 40)
     seen: dict[str, object] = {}
 
     def fake_optimize(**kwargs: object) -> _Result:
