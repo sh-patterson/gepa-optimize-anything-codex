@@ -39,13 +39,12 @@ long-context multiplier; it is not provider billing.
 
 ## Supported agentic configuration
 
-The compatibility command is Linux-only. Set `sandbox=False` and pass
-`--no-sandbox` to preflight. The default GEPA bubblewrap sandbox does not mount
-every Codex installation and auth location the adapter needs. Codex still runs
-the translated command in its own `workspace-write` sandbox. The process
-inherits non-Anthropic host credentials such as repository or cloud tokens,
-matching GEPA's unsandboxed environment behavior; run from a disposable,
-least-privilege environment and unset secrets the task does not need.
+The compatibility command is Linux-only and uses GEPA's default Bubblewrap
+sandbox. Install Codex with
+`npm install --prefix "$HOME/.local" @openai/codex`, prepend
+`~/.local/node_modules/.bin` to `PATH`, set `CODEX_API_KEY`, and stage the
+adapter with `sandbox_runtime.py stage`. Run preflight before starting an
+agentic engine. Codex uses writable homes beneath `~/.cache`.
 
 Do not set `max_token_cost` for `autoresearch` or `meta_harness`. GEPA sends it
 to the compatibility command as `--max-budget-usd`; the adapter rejects that
