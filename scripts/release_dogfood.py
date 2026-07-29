@@ -21,7 +21,7 @@ from typing import Any, Callable
 ENGINES = frozenset({"autoresearch", "meta_harness"})
 HOST_TIMEOUT_SECONDS = 600
 SEED_CANDIDATE = "Return RED."
-TARGET_CANDIDATE = "Return BLUE."
+TARGET_TOKEN = "BLUE"
 TARGET_MODEL = "gpt-5.6-luna"
 REASONING_EFFORT = "high"
 MAX_ADAPTER_INVOCATIONS = 1
@@ -198,12 +198,6 @@ def require_unique_state_dir(state_dir: Path) -> None:
     state_dir.mkdir(parents=True, exist_ok=True)
 
 
-def _returned_cost(metadata: object, name: str) -> float:
-    if not isinstance(metadata, dict) or name not in metadata:
-        raise ValueError(f"GEPA result is missing {name}")
-    return _nonnegative_number(metadata[name], name)
-
-
 def _result_summary(result: object) -> dict[str, Any]:
     for name in ("best_candidate", "best_score", "total_evals", "metadata"):
         if not hasattr(result, name):
@@ -255,22 +249,18 @@ def build_receipt(
         _nonnegative_number(record["estimated_cost_usd"], "estimated_cost_usd")
         for record in records
     )
-    metadata = result.get("metadata")
-    adapter_cost = _returned_cost(metadata, "adapter_cost")
-    returned_total = _returned_cost(metadata, "total_cost")
-    if records[0]["cost_status"] != metadata.get("adapter_cost_status"):
-        raise ValueError("journal and returned adapter cost status do not agree")
-    eval_cost = returned_total - adapter_cost
-    if eval_cost < 0:
-        raise ValueError("returned total cost is lower than adapter cost")
-    agreement = all(
-        math.isclose(left, right, rel_tol=1e-9, abs_tol=1e-12)
-        for left, right in ((estimated_cost, adapter_cost),)
-    )
-    if not agreement:
-        raise ValueError("journal and returned costs do not agree")
     if authentication_mode not in {"chatgpt_login", "codex_api_key"}:
         raise ValueError("invalid authentication mode")
+    sessions = sorted((state_dir / "sessions").glob("*.json"))
+    if len(sessions) != 1:
+        raise ValueError("release evidence must contain exactly one session mapping")
+    _session_matches(sessions[0], records[0])
+    invocation_path = next((state_dir / "invocations").glob("*.json"))
+    evidence_paths = {
+        **file_paths,
+        "invocation": invocation_path,
+        "session": sessions[0],
+    }
     return {
         "schema_version": 2,
         "status": "success",
@@ -300,11 +290,8 @@ def build_receipt(
         "usage": usage,
         "cost": {
             "estimated_usd": estimated_cost,
-            "adapter_reported_usd": adapter_cost,
-            "eval_usd": eval_cost,
-            "total_usd": returned_total,
             "cost_status": records[0]["cost_status"],
-            "agreement": agreement,
+            "source": "codex_adapter_invocation_journal",
         },
         "sandbox": {"enabled": True, "runtime": "bubblewrap"},
         "terminal": {
@@ -320,7 +307,7 @@ def build_receipt(
             }
             for record in records
         ],
-        "file_hashes": _required_hashes(file_paths),
+        "file_hashes": _required_hashes(evidence_paths),
     }
 
 
@@ -435,6 +422,7 @@ def stage_and_preflight(
         )
     environment = runtime.runtime_environment(paths)
     environment["CODEX_ADAPTER_MAX_INVOCATIONS"] = str(MAX_ADAPTER_INVOCATIONS)
+    environment["CODEX_ADAPTER_PRE_SUBMISSION_RETRIES"] = "0"
     mode = authentication_mode(environment)
     if mode == "chatgpt_login":
         present = [name for name in API_KEY_NAMES if environment.get(name)]
@@ -467,7 +455,7 @@ def stage_and_preflight(
 
 
 def _evaluate(candidate: str, _example: object) -> tuple[float, dict[str, Any]]:
-    passed = TARGET_CANDIDATE in candidate
+    passed = TARGET_TOKEN in candidate
     return float(passed), {
         "passed": passed,
         "feedback": "Candidate must contain BLUE." if not passed else "Passed.",
@@ -551,7 +539,7 @@ def _session_matches(path: Path, record: dict[str, Any]) -> None:
 
 
 def _valid_result(result: dict[str, Any]) -> None:
-    if TARGET_CANDIDATE not in result["best_candidate"]:
+    if TARGET_TOKEN not in result["best_candidate"]:
         raise ValueError("best candidate does not contain BLUE")
     if result["best_score"] != 1.0:
         raise ValueError("best score is not 1.0")

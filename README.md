@@ -22,14 +22,16 @@ codex plugin add gepa-optimize-anything@gepa-optimize-anything-codex
 ```
 
 Start a new Codex task after installation. Invoke
-`$gepa-optimize-anything-codex` with the artifact and evaluator you want to
-improve.
+`$gepa-optimize-anything:gepa-optimize-anything-codex` with the artifact and
+evaluator you want to improve.
 
 When invoked, the skill directs Codex to install pinned GEPA when needed and
 launch it with the bundled adapter first on `PATH`. This plugin targets Codex
 CLI and Codex desktop. Agentic runs require Linux, Bubblewrap, the Codex CLI,
 `jq`, and either an isolated ChatGPT login or `CODEX_API_KEY`; in-process GEPA
-and `best_of_n` do not require that agentic jail.
+and `best_of_n` retain GEPA's upstream LM interface and do not require that
+agentic jail. The public Codex adapter supports `autoresearch` and
+`meta_harness`; it does not replace the in-process LM interface.
 
 The adapter translates GEPA's upstream `claude-sonnet-4-6` default to
 `gpt-5.6-luna` with `high` reasoning. It also accepts the target model name
@@ -73,10 +75,9 @@ retry. Set
 `stop_at_score` whenever the metric has a known ceiling. A host timeout remains
 an optional emergency stop, not a default run budget.
 
-Set an external spend limit in the OpenAI account before a paid run. These
-controls complement the bounded work controls but are not per-invocation USD
-enforcement. The supported v1 contract is bounded work, not an exact dollar
-ceiling.
+Project spend limits can backstop API-key traffic, but they do not govern
+staged ChatGPT-login traffic and are not per-invocation USD enforcement. The
+supported v1 contract is bounded work, not an exact dollar ceiling.
 
 The default sandbox does not expose the normal `~/.codex` login directory.
 `sandbox_runtime.py login`
@@ -122,30 +123,43 @@ RUN_CODEX_LIVE=1 python scripts/release_dogfood.py --engine meta_harness
 
 The matching pytest cases are also opt-in. They verify Luna with high reasoning,
 the Bubblewrap sandbox, a deterministic `RED` to `BLUE` result, positive usage
-and estimate, cost agreement, session mapping, and the persisted receipt:
+and estimate from the adapter journal, session mapping, and the persisted
+receipt:
 
 ```bash
 RUN_CODEX_LIVE=1 python -m pytest -q tests/test_live_optimize_anything.py
 ```
 
 The same live test file runs installed-plugin smokes for the in-process `gepa`
-and `best_of_n` engines through the installed `CodexLM` driver. All four release
-smokes therefore use staged ChatGPT login, `gpt-5.6-luna` with high reasoning,
-the adapter invocation journal, and the same token-derived usage estimate.
-Neither API-key variable may be present. Their standalone commands are:
+and `best_of_n` engines through the installed `CodexLM` test driver. This is
+release-test plumbing, not a public replacement for GEPA's in-process LM
+interface. All four release smokes use staged ChatGPT login,
+`gpt-5.6-luna` with high reasoning, the adapter invocation journal, and the
+same token-derived usage estimate. Neither API-key variable may be present.
+Their standalone commands are:
 
 ```bash
 RUN_CODEX_LIVE=1 python scripts/release_inprocess_smoke.py --engine gepa --output-dir /tmp/gepa-smoke
 RUN_CODEX_LIVE=1 python scripts/release_inprocess_smoke.py --engine best_of_n --output-dir /tmp/best-of-n-smoke
 ```
 
-Do not set `max_token_cost`. For release dogfood, use a dedicated project hard
-limit and inspect each durable runner receipt before starting the next engine.
-A submitted call and its accounting can arrive after that check. This is an
-operational backstop, not per-invocation USD enforcement. Outside the release
-runner, the adapter defaults to four starts per unique state directory. Set
-`CODEX_ADAPTER_MAX_INVOCATIONS` to a positive integer to override that
-fail-closed request-count guard.
+The pre-v1 installed-skill dogfood exercises the user-facing skill invocation
+with a deterministic eight-case JSON routing policy and one bounded
+MetaHarness iteration:
+
+```bash
+RUN_CODEX_LIVE=1 python scripts/installed_skill_dogfood.py \
+  --output-dir /tmp/installed-skill-dogfood
+```
+
+It requires the same installed `GEPA_CODEX_SKILL_DIR` and staged ChatGPT login.
+Its receipt stores score traces, candidate hashes, usage, session mappings, and
+custody hashes, but no prompts, responses, candidate text, or credentials.
+
+Do not set `max_token_cost`. Inspect each durable runner receipt before
+starting the next engine. Outside the release runner, the adapter defaults to
+four starts per unique state directory. Set `CODEX_ADAPTER_MAX_INVOCATIONS` to
+a positive integer to override that fail-closed request-count guard.
 
 ## Scope
 

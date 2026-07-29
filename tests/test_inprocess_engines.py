@@ -49,7 +49,6 @@ def test_gepa_inprocess_engine_accepts_a_no_network_lm(tmp_path: Path) -> None:
     assert result.best_candidate == "Return BLUE."
     assert result.best_score == 1.0
     assert result.total_evals == 4
-    assert result.metadata["adapter_cost"] == 0.0
 
 
 def test_best_of_n_inprocess_engine_accepts_a_no_network_lm(
@@ -92,7 +91,6 @@ def test_best_of_n_inprocess_engine_accepts_a_no_network_lm(
     assert result.best_candidate == "Return BLUE."
     assert result.best_score == 1.0
     assert result.total_evals == 3
-    assert result.metadata["adapter_cost"] == 0.0
     assert result.metadata["n_samples"] == 3
     assert result.metadata["n_parse_failures"] == 0
     assert len(set(candidates)) == 3

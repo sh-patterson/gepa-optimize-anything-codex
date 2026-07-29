@@ -44,6 +44,23 @@ def _invocation(**overrides: object) -> dict[str, object]:
     return record
 
 
+def _write_evidence(state_dir: Path, record: dict[str, object]) -> None:
+    invocation_dir = state_dir / "invocations"
+    invocation_dir.mkdir(parents=True)
+    (invocation_dir / "one.json").write_text(json.dumps(record), encoding="utf-8")
+    session_dir = state_dir / "sessions"
+    session_dir.mkdir()
+    (session_dir / "one.json").write_text(
+        json.dumps(
+            {
+                "upstream_session_id": record["upstream_session_id"],
+                "thread_id": record["codex_thread_id"],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
 def test_release_policy_is_fixed_for_each_agentic_engine(tmp_path: Path) -> None:
     autoresearch = release_dogfood.release_config("autoresearch", tmp_path)
     meta_harness = release_dogfood.release_config("meta_harness", tmp_path)
@@ -61,13 +78,28 @@ def test_release_policy_is_fixed_for_each_agentic_engine(tmp_path: Path) -> None
     assert release_dogfood.release_policy("meta_harness")["max_adapter_invocations"] == 1
 
 
+def test_release_oracle_accepts_promised_blue_token() -> None:
+    score, evidence = release_dogfood._evaluate("BLUE\n", {})
+
+    assert score == 1.0
+    assert evidence["passed"] is True
+    release_dogfood._valid_result(
+        {"best_candidate": "BLUE\n", "best_score": 1.0, "total_evals": 2}
+    )
+
+    score, evidence = release_dogfood._evaluate("Return RED.", {})
+
+    assert score == 0.0
+    assert evidence["passed"] is False
+    with pytest.raises(ValueError, match="does not contain BLUE"):
+        release_dogfood._valid_result(
+            {"best_candidate": "Return RED.", "best_score": 1.0, "total_evals": 2}
+        )
+
+
 def test_receipt_aggregates_journal_usage_and_persists_manifest(tmp_path: Path) -> None:
     state_dir = tmp_path / "state"
-    invocation_dir = state_dir / "invocations"
-    invocation_dir.mkdir(parents=True)
-    (invocation_dir / "one.json").write_text(
-        json.dumps(_invocation()), encoding="utf-8"
-    )
+    _write_evidence(state_dir, _invocation())
     manifest = tmp_path / "run_manifest.json"
     manifest.write_text('{"immutable":true}\n', encoding="utf-8")
 
@@ -84,11 +116,7 @@ def test_receipt_aggregates_journal_usage_and_persists_manifest(tmp_path: Path) 
             "best_candidate": "Return BLUE.",
             "best_score": 1.0,
             "total_evals": 2,
-            "metadata": {
-                "adapter_cost": 0.001735,
-                "total_cost": 0.001735,
-                "adapter_cost_status": "standard_tier_upper_estimate_from_observed_usage",
-            },
+            "metadata": {},
         },
         file_paths={"manifest": manifest},
         commits={"plugin": "abc123"},
@@ -113,7 +141,11 @@ def test_receipt_aggregates_journal_usage_and_persists_manifest(tmp_path: Path) 
         "output_tokens": 100,
     }
     assert stored["cost"]["estimated_usd"] == pytest.approx(0.001735)
-    assert stored["cost"]["agreement"] is True
+    assert stored["cost"] == {
+        "estimated_usd": pytest.approx(0.001735),
+        "cost_status": "standard_tier_upper_estimate_from_observed_usage",
+        "source": "codex_adapter_invocation_journal",
+    }
     assert stored["session_mapping"] == [
         {
             "upstream_session_id": "gepa-session-1",
@@ -122,35 +154,31 @@ def test_receipt_aggregates_journal_usage_and_persists_manifest(tmp_path: Path) 
         }
     ]
     assert stored["file_hashes"]["manifest"] == release_dogfood.sha256_file(manifest)
+    assert set(stored["file_hashes"]) == {"manifest", "invocation", "session"}
 
 
-def test_receipt_rejects_journal_cost_mismatch(tmp_path: Path) -> None:
+def test_receipt_rejects_session_mapping_mismatch(tmp_path: Path) -> None:
     state_dir = tmp_path / "state"
-    invocation_dir = state_dir / "invocations"
-    invocation_dir.mkdir(parents=True)
-    (invocation_dir / "one.json").write_text(
+    _write_evidence(state_dir, _invocation())
+    (state_dir / "sessions" / "one.json").write_text(
         json.dumps(
-            _invocation(cost_status="estimated", estimated_cost_usd=0.01)
+            {
+                "upstream_session_id": "gepa-session-1",
+                "thread_id": "different-thread",
+            }
         ),
         encoding="utf-8",
     )
     manifest = tmp_path / "run_manifest.json"
     manifest.write_text("{}\n", encoding="utf-8")
-    result = {
-        "metadata": {
-            "adapter_cost": 0.001735,
-            "total_cost": 0.001735,
-            "adapter_cost_status": "estimated",
-        }
-    }
 
-    with pytest.raises(ValueError, match="costs do not agree"):
+    with pytest.raises(ValueError, match="session mapping"):
         release_dogfood.build_receipt(
             engine="autoresearch",
             state_dir=state_dir,
             manifest_path=manifest,
             source={},
-            result=result,
+            result={},
             file_paths={"manifest": manifest},
             commits={},
             version="0.2.1",
@@ -170,9 +198,14 @@ def test_receipt_fails_closed_for_incomplete_invocation_evidence(
     tmp_path: Path, record: dict[str, object], error: str
 ) -> None:
     state_dir = tmp_path / "state"
-    invocation_dir = state_dir / "invocations"
-    invocation_dir.mkdir(parents=True)
-    (invocation_dir / "one.json").write_text(json.dumps(record), encoding="utf-8")
+    if "upstream_session_id" in record:
+        _write_evidence(state_dir, record)
+    else:
+        invocation_dir = state_dir / "invocations"
+        invocation_dir.mkdir(parents=True)
+        (invocation_dir / "one.json").write_text(
+            json.dumps(record), encoding="utf-8"
+        )
     manifest = tmp_path / "run_manifest.json"
     manifest.write_text("{}\n", encoding="utf-8")
 
@@ -182,13 +215,7 @@ def test_receipt_fails_closed_for_incomplete_invocation_evidence(
             state_dir=state_dir,
             manifest_path=manifest,
             source={},
-            result={
-                "metadata": {
-                    "adapter_cost": 0.0,
-                    "total_cost": 0.0,
-                    "adapter_cost_status": "unknown",
-                }
-            },
+            result={},
             file_paths={"manifest": manifest},
             commits={},
             version="0.2.1",
@@ -217,7 +244,7 @@ def test_cli_requires_explicit_live_run_authorization(
     assert "RUN_CODEX_LIVE=1" in capsys.readouterr().err
 
 
-def _installed_skill(tmp_path: Path, version: str = "0.3.2") -> Path:
+def _installed_skill(tmp_path: Path, version: str = "1.0.0") -> Path:
     plugin = tmp_path / "installed" / "gepa-optimize-anything"
     skill = plugin / "skills" / "gepa-optimize-anything-codex"
     skill.mkdir(parents=True)
@@ -356,6 +383,7 @@ def test_stage_and_preflight_records_actual_staged_paths(
 
     assert environment["CODEX_ADAPTER_STATE_DIR"] == str(Paths.state_dir)
     assert environment["CODEX_ADAPTER_MAX_INVOCATIONS"] == "1"
+    assert environment["CODEX_ADAPTER_PRE_SUBMISSION_RETRIES"] == "0"
     assert environment["CODEX_ADAPTER_AUTH_MODE"] == "chatgpt_login"
     assert evidence["launcher"] == str(launcher)
     assert evidence["probe_success"] is True

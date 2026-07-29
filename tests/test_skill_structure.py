@@ -69,7 +69,7 @@ def test_package_and_plugin_versions_match():
         (PLUGIN / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8")
     )
 
-    assert pyproject["project"]["version"] == "0.3.2"
+    assert pyproject["project"]["version"] == "1.0.0"
     assert manifest["version"] == pyproject["project"]["version"]
     assert pyproject["tool"]["setuptools"]["packages"] == []
 
@@ -101,3 +101,14 @@ def test_supported_codex_cli_version_is_pinned_consistently():
     assert expected_install in runtime
     assert "@openai/codex@0.146.0" in workflow
     assert 'grep -F "0.146.0"' in workflow
+
+
+def test_public_adapter_scope_is_explicit():
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    skill = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+    api = (SKILL / "references" / "api.md").read_text(encoding="utf-8")
+
+    assert "public Codex adapter supports `autoresearch`" in readme
+    assert "`meta_harness`; it does not replace the in-process LM interface" in readme
+    assert "release-test plumbing, not a public composition API" in skill
+    assert "does not support macOS agentic execution" in api

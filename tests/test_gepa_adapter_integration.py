@@ -187,7 +187,6 @@ print(json.dumps({
     assert result.best_candidate == "Return BLUE."
     assert result.best_score == 1.0
     assert result.total_evals == 2
-    assert result.metadata["adapter_cost"] > 0
     assert len(list((state_dir / "sessions").glob("*.json"))) == 1
     invocation_records = [
         json.loads(path.read_text(encoding="utf-8"))
@@ -304,7 +303,6 @@ print(json.dumps({
     )
     assert all("--max-budget-usd" not in invocation for invocation in invocations)
     assert result.total_evals == 10
-    assert result.metadata["adapter_cost"] > 0
     assert result.metadata["meta_harness"]["iterations_run"] == 3
     assert result.metadata["meta_harness"]["stop_reason"] == "completed"
     assert len(list((state_dir / "invocation-slots").iterdir())) == 3

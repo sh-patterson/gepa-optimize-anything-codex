@@ -59,6 +59,12 @@ argument** — and the same code runs under any of them:
 (There is also a `best_of_n` engine — sample N independent candidates, keep the best. It is
 deliberately naive: use it as a **baseline** to compare an optimizer against, not as the optimizer.)
 
+This plugin's public Codex adapter covers the Linux-only `autoresearch` and
+`meta_harness` subprocess boundary. The in-process `gepa` and `best_of_n`
+engines retain GEPA's upstream LM interface; the packaged `CodexLM` module is
+release-test plumbing, not a public composition API. macOS agentic execution is
+unsupported by this adapter.
+
 This makes it easy to start with one backend and benchmark others on the identical task/evaluator.
 There are also **composition/pipeline helpers** that combine backends over the same task:
 `optimize_sequential` (a pipeline — each stage's best seeds the next), `optimize_parallel`,
@@ -100,13 +106,12 @@ even see it). See `references/api.md` for details and when to use each mode.
 
 ## Install
 ```bash
-pip install "gepa[full] @ git+https://github.com/sh-patterson/gepa.git@41ca7c3a3d1cc502ab357163325b9751a05507f6"
+pip install "gepa[full] @ git+https://github.com/gepa-ai/gepa.git@0310bb7b4952d4695718f9f557e450fd6781301e"
 # [full] pulls cloudpickle — needed to pickle closure evaluators for
                            # parallel workers / opt-in evaluation caching; plain `pip install gepa`
                            # can fail there when your evaluator closes over data.
-# Proposer LLM: upstream GEPA defaults to "openai/gpt-5.1". For an in-process Codex-first run, explicitly use
-# "openai/gpt-5.6-luna" with reasoning_effort="high", as shown below. Set OPENAI_API_KEY. You can
-# also pass another LiteLLM id or any callable implementing GEPA's LM protocol.
+# Proposer LLM: in-process engines use GEPA's upstream LM interface. Configure
+# the provider model and credentials required by that interface.
 # Agentic backends (autoresearch, meta_harness) additionally need the Codex CLI and this skill's
 # `scripts/claude` compatibility command on PATH (plus `jq` for the generated eval.sh).
 # Resolve SKILL_DIR to the directory containing this installed SKILL.md:
@@ -241,9 +246,8 @@ result = optimize_anything(
         output_dir="outputs/my_run",  # eval server: per-eval JSON, progress_log.jsonl, summary.json
         engine_config={  # gepa backend: a GEPAConfig-shaped dict, validated strictly —
             "reflection": {  #   an unknown key raises TypeError immediately (fail fast)
-                # Codex-first teacher default. Upstream GEPA itself defaults to openai/gpt-5.1.
-                "reflection_lm": "openai/gpt-5.6-luna",
-                "reflection_lm_kwargs": {"reasoning_effort": "high"},
+                "reflection_lm": "openai/gpt-5.1",
+                "reflection_lm_kwargs": {},
                 "reflection_minibatch_size": 5,
             },
             "engine": {"max_workers": 32, "seed": 0},  # seed = reproducibility

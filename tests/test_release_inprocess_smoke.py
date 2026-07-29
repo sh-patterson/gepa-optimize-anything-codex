@@ -25,7 +25,7 @@ def _installed_skill(tmp_path: Path) -> Path:
     (skill / "SKILL.md").write_text("# installed\n", encoding="utf-8")
     manifest = plugin / ".codex-plugin" / "plugin.json"
     manifest.parent.mkdir()
-    manifest.write_text('{"version":"0.3.2"}\n', encoding="utf-8")
+    manifest.write_text('{"version":"1.0.0"}\n', encoding="utf-8")
     scripts = skill / "scripts"
     scripts.mkdir()
     (scripts / "codex_lm.py").write_text("# driver\n", encoding="utf-8")
@@ -71,6 +71,42 @@ def test_codex_usage_requires_positive_model_tokens() -> None:
     }
     with pytest.raises(RuntimeError, match="usage is empty"):
         smoke._codex_usage([])
+
+
+def test_journal_evidence_hashes_invocation_and_session_records(
+    tmp_path: Path,
+) -> None:
+    state = tmp_path / "state"
+    invocations = state / "invocations"
+    sessions = state / "sessions"
+    invocations.mkdir(parents=True)
+    sessions.mkdir()
+    invocation = {
+        "terminal_status": "completed",
+        "return_code": 0,
+        "target_model": smoke.MODEL,
+        "reasoning_effort": smoke.REASONING_EFFORT,
+        "usage": {"input_tokens": 10, "output_tokens": 2},
+        "estimated_cost_usd": 0.001,
+        "upstream_session_id": "session",
+        "codex_thread_id": "thread",
+    }
+    invocation_path = invocations / "one.json"
+    invocation_path.write_text(json.dumps(invocation), encoding="utf-8")
+    session_path = sessions / "one.json"
+    session_path.write_text(
+        json.dumps({"upstream_session_id": "session", "thread_id": "thread"}),
+        encoding="utf-8",
+    )
+
+    evidence = smoke._journal_evidence(
+        state, 1, {"input_tokens": 10, "output_tokens": 2}
+    )
+
+    assert evidence["evidence_files"] == {
+        "invocation_1": invocation_path,
+        "session_1": session_path,
+    }
 
 
 @pytest.mark.parametrize("engine", ("gepa", "best_of_n"))

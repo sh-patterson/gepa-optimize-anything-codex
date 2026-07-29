@@ -252,9 +252,9 @@ def _prepare_codex_runtime(skill: Path, work_dir: Path) -> dict[str, Any]:
 def _journal_evidence(
     state_dir: Path, expected_invocations: int, expected_usage: dict[str, int]
 ) -> dict[str, Any]:
+    invocation_paths = sorted((state_dir / "invocations").glob("*.json"))
     records = [
-        json.loads(path.read_text(encoding="utf-8"))
-        for path in sorted((state_dir / "invocations").glob("*.json"))
+        json.loads(path.read_text(encoding="utf-8")) for path in invocation_paths
     ]
     if len(records) != expected_invocations or not records:
         raise RuntimeError("adapter journal invocation count is inconsistent")
@@ -284,10 +284,35 @@ def _journal_evidence(
     ]
     if any(not item["upstream_session_id"] or not item["codex_thread_id"] for item in mappings):
         raise RuntimeError("adapter journal session mapping is incomplete")
+    session_paths = sorted((state_dir / "sessions").glob("*.json"))
+    if len(session_paths) != len({item["upstream_session_id"] for item in mappings}):
+        raise RuntimeError("adapter journal session evidence is inconsistent")
+    sessions = [
+        json.loads(path.read_text(encoding="utf-8")) for path in session_paths
+    ]
+    expected_mappings = {
+        (item["upstream_session_id"], item["codex_thread_id"]) for item in mappings
+    }
+    actual_mappings = {
+        (session.get("upstream_session_id"), session.get("thread_id"))
+        for session in sessions
+    }
+    if actual_mappings != expected_mappings:
+        raise RuntimeError("adapter journal session evidence is inconsistent")
     return {
         "invocation_count": len(records),
         "estimated_cost_usd": estimated_cost,
         "session_mapping": mappings,
+        "evidence_files": {
+            **{
+                f"invocation_{index}": path
+                for index, path in enumerate(invocation_paths, start=1)
+            },
+            **{
+                f"session_{index}": path
+                for index, path in enumerate(session_paths, start=1)
+            },
+        },
     }
 
 
@@ -378,6 +403,7 @@ def run_smoke(
             "invocation_count": 1,
             "estimated_cost_usd": 0.001,
             "session_mapping": [{"upstream_session_id": "test", "codex_thread_id": "test"}],
+            "evidence_files": {},
         }
     result = _result(raw)
     duration_ms = round((time.monotonic() - started) * 1000)
@@ -387,6 +413,7 @@ def run_smoke(
         "runner": Path(__file__).resolve(),
         "codex_lm": skill / "scripts" / "codex_lm.py",
         "adapter": runtime["adapter"],
+        **runtime_evidence["evidence_files"],
     }
     receipt = {
         "schema_version": 2,

@@ -6,9 +6,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).parents[1]
-PINNED_GEPA_COMMIT = "41ca7c3a3d1cc502ab357163325b9751a05507f6"
+PINNED_GEPA_COMMIT = "0310bb7b4952d4695718f9f557e450fd6781301e"
 PINNED_GEPA_DEPENDENCY = (
-    "gepa[full] @ git+https://github.com/sh-patterson/gepa.git@"
+    "gepa[full] @ git+https://github.com/gepa-ai/gepa.git@"
     f"{PINNED_GEPA_COMMIT}"
 )
 SKILL = (
@@ -34,9 +34,9 @@ PINNED_UPSTREAM_SHA256 = {
 }
 
 REVIEWED_LOCAL_SHA256 = {
-    "SKILL.md": "af5b534f308fb12b0ab141cb1e744e6857708b3db51f98bfa3d9490d0da5bf81",
+    "SKILL.md": "06f95f9f1688f5141de2ae0f851513bf190e3dd279fb2e4cb952ae3a69bb5e39",
     "references/api.md": (
-        "cd9346cbc439a4fe35ffa7b481fea38ffd8462a78d923475c2ccada49eb02fe7"
+        "4a39fceee6a698e672fb4000570791534dfe76d4939004821d5092482d4fa2c1"
     ),
     "references/gotchas.md": (
         "d9bf16e8dbf49aa38ebc7ed0e0bed4f5f2faf192e7cc2a002020709348bd488f"
