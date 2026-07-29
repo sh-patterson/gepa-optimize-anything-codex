@@ -65,3 +65,4 @@ def test_package_and_plugin_versions_match():
 
     assert pyproject["project"]["version"] == "0.3.0"
     assert manifest["version"] == pyproject["project"]["version"]
+    assert pyproject["tool"]["setuptools"]["packages"] == []

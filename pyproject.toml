@@ -19,6 +19,9 @@ markers = [
   "live: makes a paid Codex API call",
 ]
 
+[tool.setuptools]
+packages = []
+
 [tool.ruff]
 line-length = 88
 target-version = "py311"
