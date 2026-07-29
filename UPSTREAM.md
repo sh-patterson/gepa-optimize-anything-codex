@@ -3,9 +3,8 @@
 This repository adapts GEPA's `gepa-optimize-anything` skill for Codex.
 
 - Original upstream repository: https://github.com/gepa-ai/gepa
-- Pinned compatibility fork: https://github.com/sh-patterson/gepa
 - Upstream skill: `.claude/skills/gepa-optimize-anything`
-- Pinned commit: `41ca7c3a3d1cc502ab357163325b9751a05507f6`
+- Pinned commit: `0310bb7b4952d4695718f9f557e450fd6781301e`
 - Upstream license: MIT
 - Upstream copyright: Copyright (c) 2025 Lakshya A Agrawal
 

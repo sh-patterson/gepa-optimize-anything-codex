@@ -73,6 +73,42 @@ def test_codex_usage_requires_positive_model_tokens() -> None:
         smoke._codex_usage([])
 
 
+def test_journal_evidence_hashes_invocation_and_session_records(
+    tmp_path: Path,
+) -> None:
+    state = tmp_path / "state"
+    invocations = state / "invocations"
+    sessions = state / "sessions"
+    invocations.mkdir(parents=True)
+    sessions.mkdir()
+    invocation = {
+        "terminal_status": "completed",
+        "return_code": 0,
+        "target_model": smoke.MODEL,
+        "reasoning_effort": smoke.REASONING_EFFORT,
+        "usage": {"input_tokens": 10, "output_tokens": 2},
+        "estimated_cost_usd": 0.001,
+        "upstream_session_id": "session",
+        "codex_thread_id": "thread",
+    }
+    invocation_path = invocations / "one.json"
+    invocation_path.write_text(json.dumps(invocation), encoding="utf-8")
+    session_path = sessions / "one.json"
+    session_path.write_text(
+        json.dumps({"upstream_session_id": "session", "thread_id": "thread"}),
+        encoding="utf-8",
+    )
+
+    evidence = smoke._journal_evidence(
+        state, 1, {"input_tokens": 10, "output_tokens": 2}
+    )
+
+    assert evidence["evidence_files"] == {
+        "invocation_1": invocation_path,
+        "session_1": session_path,
+    }
+
+
 @pytest.mark.parametrize("engine", ("gepa", "best_of_n"))
 def test_runner_injects_codex_driver_into_inprocess_engines(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, engine: str

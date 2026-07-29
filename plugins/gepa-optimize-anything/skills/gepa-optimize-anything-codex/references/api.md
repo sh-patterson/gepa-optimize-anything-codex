@@ -60,7 +60,7 @@ you want an unbiased number to report; skip it otherwise.
 | `output_dir` | `None` | where the eval server writes per-eval JSON, `progress_log.jsonl`, `summary.json`. `None` → `outputs/optimize_anything/<task>/<engine>/<timestamp>/`. |
 | `run_dir` | `None` | engine workspace (gepa run dir / agent work dir; with `engine.write_agent_state=True` the gepa backend writes an agent-readable `iterations/` + `pareto/` tree here). Distinct from `output_dir`. `None` → subprocess engines use a tempdir; set it to persist artifacts. |
 | `stop_at_score` | `None` | early-stop score threshold; each engine interprets it. |
-| `sandbox` | **`True`** | OS-jail the subprocess engines' `claude` sessions: bwrap on Linux (needs the `bubblewrap` package — the run aborts at launch if `bwrap` is missing), Claude Code's Seatbelt sandbox on macOS. Also forces the work dir to a tempdir even when `run_dir` is set (artifacts are mirrored back). `False` prints a loud warning and runs the agent unsandboxed (`bypassPermissions`, full host access). |
+| `sandbox` | **`True`** | OS-jail the subprocess engines' compatibility sessions with Bubblewrap on Linux (needs the `bubblewrap` package — the run aborts at launch if `bwrap` is missing). This Codex adapter does not support macOS agentic execution. Also forces the work dir to a tempdir even when `run_dir` is set (artifacts are mirrored back). `False` prints a loud warning and runs the agent unsandboxed (`bypassPermissions`, full host access). |
 | `engine_config` | `{}` | dict of **engine-specific** options — see the per-backend sections below. Parsed into a typed per-engine config dataclass; **an unknown key raises `TypeError` immediately** (fail fast, not warn-and-drop). |
 
 **If both `max_evals` and `max_token_cost` are `None`, the run is unbounded** (only a
@@ -105,7 +105,7 @@ the `max_token_cost` → `engine.max_reflection_cost` cap.
 ```python
 engine_config = {
     "reflection": {  # -> ReflectionConfig
-        "reflection_lm": "openai/gpt-5.6-luna",  # Codex-first choice; upstream default is gpt-5.1
+        "reflection_lm": "openai/gpt-5.1",  # configure through GEPA's upstream LM interface
         "reflection_lm_kwargs": {
             "reasoning_effort": "high"
         },  # litellm kwargs (temperature, thinking, …)
