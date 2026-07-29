@@ -78,6 +78,25 @@ def test_release_policy_is_fixed_for_each_agentic_engine(tmp_path: Path) -> None
     assert release_dogfood.release_policy("meta_harness")["max_adapter_invocations"] == 1
 
 
+def test_release_oracle_accepts_promised_blue_token() -> None:
+    score, evidence = release_dogfood._evaluate("BLUE\n", {})
+
+    assert score == 1.0
+    assert evidence["passed"] is True
+    release_dogfood._valid_result(
+        {"best_candidate": "BLUE\n", "best_score": 1.0, "total_evals": 2}
+    )
+
+    score, evidence = release_dogfood._evaluate("Return RED.", {})
+
+    assert score == 0.0
+    assert evidence["passed"] is False
+    with pytest.raises(ValueError, match="does not contain BLUE"):
+        release_dogfood._valid_result(
+            {"best_candidate": "Return RED.", "best_score": 1.0, "total_evals": 2}
+        )
+
+
 def test_receipt_aggregates_journal_usage_and_persists_manifest(tmp_path: Path) -> None:
     state_dir = tmp_path / "state"
     _write_evidence(state_dir, _invocation())
