@@ -1,6 +1,6 @@
 {
   "name": "gepa-optimize-anything",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Run GEPA Optimize Anything through Codex.",
   "author": {
     "name": "Shawn Patterson",
@@ -14,7 +14,7 @@
   "interface": {
     "displayName": "GEPA Optimize Anything for Codex",
     "shortDescription": "Optimize scored text artifacts through Codex.",
-    "longDescription": "Run GEPA's text optimization engines through Codex, including the Codex compatibility command for agentic engines.",
+    "longDescription": "Run GEPA's text optimization engines through Codex, including the supported in-process adapter for GEPA and best-of-N.",
     "developerName": "Shawn Patterson",
     "category": "Engineering",
     "capabilities": ["Interactive", "Write"],

@@ -31,8 +31,9 @@ preflight, and inspect the result.
 | `autoresearch` | Codex subprocess | Installed Codex adapter | Linux with Bubblewrap |
 | `meta_harness` | Codex subprocess | Installed Codex adapter | Linux with Bubblewrap |
 
-The public Codex adapter supports `autoresearch` and `meta_harness`. It does not
-replace GEPA's in-process LM interface or add a new optimizer.
+The public Codex adapter supports `autoresearch`, `meta_harness`, `gepa`, and
+`best_of_n`. The installed `scripts/codex_lm.py` callable supplies Codex to the
+two in-process engines. It does not add a new optimizer.
 
 ## Requirements
 

@@ -152,7 +152,7 @@ def _prepare_codex_runtime(skill: Path, work_dir: Path) -> dict[str, Any]:
         f"release_inprocess_runtime_{uuid4().hex}",
     )
     driver = _load_script(
-        REPOSITORY_ROOT / "scripts" / "release_codex_lm.py",
+        skill / "scripts" / "codex_lm.py",
         f"release_inprocess_driver_{uuid4().hex}",
     )
     state_dir = (
@@ -178,7 +178,7 @@ def _prepare_codex_runtime(skill: Path, work_dir: Path) -> dict[str, Any]:
         }
     )
     return {
-        "driver": driver.CodexLM,
+        "driver": driver,
         "launcher": paths.launcher,
         "adapter": paths.adapter_module,
         "environment": environment,
@@ -196,12 +196,25 @@ def _run_codex(
     lms: list[object] = []
 
     def new_lm(model: str, **kwargs: Any) -> object:
-        lm = runtime["driver"](
-            model,
-            launcher=runtime["launcher"],
-            cwd=runtime["work_dir"],
-            environment=runtime["environment"],
+        if model != MODEL:
+            raise ValueError(f"unexpected in-process model: {model}")
+        state_dir = runtime["state_dir"] / f"{engine}-{uuid4().hex}"
+        config = runtime["driver"].CodexLMConfig(
+            executable=runtime["launcher"],
+            model=MODEL,
             reasoning_effort=REASONING_EFFORT,
+            sandbox_mode="workspace-write",
+            state_dir=state_dir,
+            session_dir=runtime["state_dir"] / f"{engine}-sessions-{uuid4().hex}",
+            timeout_seconds=600,
+            retry_ceiling=0,
+        )
+        environment = dict(runtime["environment"])
+        environment["CODEX_ADAPTER_STATE_DIR"] = str(state_dir)
+        lm = runtime["driver"].CodexLM(
+            config,
+            cwd=runtime["work_dir"],
+            environment=environment,
             **kwargs,
         )
         lms.append(lm)
@@ -289,7 +302,7 @@ def run_smoke(
         "skill": skill / "SKILL.md",
         "plugin_manifest": manifest,
         "runner": Path(__file__).resolve(),
-        "release_codex_lm": REPOSITORY_ROOT / "scripts" / "release_codex_lm.py",
+        "codex_lm": skill / "scripts" / "codex_lm.py",
         "adapter": runtime["adapter"],
         **{
             f"invocation_{index}": path

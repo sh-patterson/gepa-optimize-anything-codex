@@ -179,6 +179,8 @@ def test_provenance_reads_installed_manifest_and_commit_sources(
     skill = tmp_path / "installed" / "plugin" / "skills" / "gepa-optimize-anything-codex"
     skill.mkdir(parents=True)
     (skill / "SKILL.md").write_text("# installed\n", encoding="utf-8")
+    (skill / "scripts").mkdir()
+    (skill / "scripts" / "codex_lm.py").write_text("# public\n", encoding="utf-8")
     manifest = skill.parents[1] / ".codex-plugin" / "plugin.json"
     manifest.parent.mkdir()
     manifest.write_text('{"version":"1.0.1"}\n', encoding="utf-8")
@@ -197,7 +199,7 @@ def test_provenance_reads_installed_manifest_and_commit_sources(
     [
         ("checkout", "installed plugin"),
         ("missing_skill", "SKILL.md"),
-        ("legacy_driver", "codex_lm.py"),
+        ("missing_public_driver", "codex_lm.py"),
         ("missing_manifest", "manifest"),
         ("wrong_version", "version"),
     ],
@@ -212,10 +214,10 @@ def test_installed_provenance_rejects_invalid_plugin_boundaries(
     skill.mkdir(parents=True)
     if setup != "missing_skill":
         (skill / "SKILL.md").write_text("# installed\n", encoding="utf-8")
-    if setup == "legacy_driver":
+    if setup != "missing_public_driver":
         (skill / "scripts").mkdir()
-        (skill / "scripts" / "codex_lm.py").write_text("# legacy\n", encoding="utf-8")
-    if setup not in {"missing_manifest", "checkout", "missing_skill", "legacy_driver"}:
+        (skill / "scripts" / "codex_lm.py").write_text("# public\n", encoding="utf-8")
+    if setup not in {"missing_manifest", "checkout", "missing_skill", "missing_public_driver"}:
         manifest = skill.parents[1] / ".codex-plugin" / "plugin.json"
         manifest.parent.mkdir()
         version = "9.9.9" if setup == "wrong_version" else "1.0.1"
