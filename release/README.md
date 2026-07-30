@@ -3,6 +3,9 @@
 These commands certify an installed marketplace artifact. They are not the
 normal user workflow.
 
+Version 1.0.2 adds the installed `CodexLM` callable for GEPA and best-of-N.
+The no-call checks below use fake processes only.
+
 ## Prepare the installed artifact
 
 Create a fresh virtual environment, `HOME`, `CODEX_HOME`, and adapter state.

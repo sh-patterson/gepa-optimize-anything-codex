@@ -61,9 +61,10 @@ argument** — and the same code runs under any of them:
 deliberately naive: use it as a **baseline** to compare an optimizer against, not as the optimizer.)
 
 This plugin's public Codex adapter covers the Linux-only `autoresearch` and
-`meta_harness` subprocess boundary. The in-process `gepa` and `best_of_n`
-engines retain GEPA's upstream LM interface. macOS agentic execution is
-unsupported.
+`meta_harness` subprocess boundary. `scripts/codex_lm.py` exports `CodexLM`,
+the installed callable for the in-process `gepa` and `best_of_n` engines. It pins
+`gpt-5.6-luna` with `high` reasoning and requires a fresh state and session
+directory for each engine. macOS agentic execution is unsupported.
 
 This makes it easy to start with one backend and benchmark others on the identical task/evaluator.
 There are also **composition/pipeline helpers** that combine backends over the same task:

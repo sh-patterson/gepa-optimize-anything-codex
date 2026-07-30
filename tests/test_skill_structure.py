@@ -21,7 +21,7 @@ def test_skill_has_required_files_and_local_links():
     assert "allow_implicit_invocation: true" in agent_policy
     assert (SKILL / "scripts" / "claude").is_file()
     assert (SKILL / "scripts" / "codex_claude_adapter.py").is_file()
-    assert not (SKILL / "scripts" / "codex_lm.py").exists()
+    assert (SKILL / "scripts" / "codex_lm.py").is_file()
     assert (SKILL / "scripts" / "preflight.py").is_file()
     for name in (
         "api.md",
@@ -70,7 +70,7 @@ def test_package_and_plugin_versions_match():
         (PLUGIN / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8")
     )
 
-    assert pyproject["project"]["version"] == "1.0.1"
+    assert pyproject["project"]["version"] == "1.0.2"
     assert manifest["version"] == pyproject["project"]["version"]
     assert pyproject["tool"]["setuptools"]["packages"] == []
 
@@ -110,8 +110,9 @@ def test_public_adapter_scope_is_explicit():
     api = (SKILL / "references" / "api.md").read_text(encoding="utf-8")
 
     assert "public Codex adapter supports `autoresearch`" in readme
-    assert "`meta_harness`. It does not" in readme
-    assert "replace GEPA's in-process LM interface" in readme
+    assert "`meta_harness`" in readme
+    assert "`gepa`" in readme
+    assert "`best_of_n`" in readme
     assert "in-process `gepa` and `best_of_n`" in skill
     assert "does not support macOS agentic execution" in api
 
@@ -136,4 +137,4 @@ def test_public_docs_keep_release_and_runtime_internals_out_of_first_run():
     assert "RUN_CODEX_LIVE" not in skill
     assert all("RUN_CODEX_LIVE" not in document for document in references)
     assert "RUN_CODEX_LIVE" in release_readme
-    assert "CodexLM" not in "\n".join([readme, release_readme, skill, *references])
+    assert "CodexLM" in "\n".join([readme, release_readme, skill, *references])
