@@ -17,6 +17,14 @@ smoke = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = smoke
 SPEC.loader.exec_module(smoke)
 
+FULL_USAGE = {
+    "input_tokens": 12,
+    "output_tokens": 8,
+    "cached_input_tokens": 7,
+    "cache_write_input_tokens": 0,
+    "reasoning_output_tokens": 3,
+}
+
 
 def _installed_skill(tmp_path: Path) -> Path:
     plugin = tmp_path / "installed" / "gepa-optimize-anything"
@@ -37,14 +45,14 @@ class _Result:
     best_candidate = "Return BLUE."
     best_score = 1.0
     total_evals = 4
-    metadata = {"usage": {"input_tokens": 12, "output_tokens": 8}}
+    metadata = {"usage": FULL_USAGE}
 
 
 def _evidence() -> object:
     return sys.modules["release_evidence"].AdapterEvidence(
         invocation_paths=(),
         session_paths=(),
-        usage={"input_tokens": 12, "output_tokens": 8},
+        usage=FULL_USAGE,
         estimated_cost_usd=0.001,
         mappings=(
             {
@@ -92,12 +100,9 @@ def test_config_is_bounded_and_uses_codex_model(tmp_path: Path) -> None:
 
 
 def test_codex_usage_requires_positive_model_tokens() -> None:
-    lm = type("LM", (), {"total_tokens_in": 12, "total_tokens_out": 8})()
+    lm = type("LM", (), {"total_usage": FULL_USAGE})()
 
-    assert smoke._codex_usage([lm]) == {
-        "input_tokens": 12,
-        "output_tokens": 8,
-    }
+    assert smoke._codex_usage([lm]) == FULL_USAGE
     with pytest.raises(RuntimeError, match="usage is empty"):
         smoke._codex_usage([])
 
@@ -113,6 +118,13 @@ def test_runner_injects_codex_driver_into_inprocess_engines(
             assert model == smoke.MODEL
             self.total_tokens_in = 10
             self.total_tokens_out = 2
+            self.total_usage = {
+                "input_tokens": 10,
+                "output_tokens": 2,
+                "cached_input_tokens": 4,
+                "cache_write_input_tokens": 0,
+                "reasoning_output_tokens": 1,
+            }
             self.total_cost = 0.001
             self.invocation_count = 0
             instances.append(self)
@@ -137,7 +149,13 @@ def test_runner_injects_codex_driver_into_inprocess_engines(
 
     assert result.best_candidate == "Return BLUE."
     assert result.best_score == 1.0
-    assert usage == {"input_tokens": 10, "output_tokens": 2}
+    assert usage == {
+        "input_tokens": 10,
+        "output_tokens": 2,
+        "cached_input_tokens": 4,
+        "cache_write_input_tokens": 0,
+        "reasoning_output_tokens": 1,
+    }
     assert lms == instances
     assert len(instances) == 1
 
@@ -262,7 +280,7 @@ def test_smoke_writes_sanitized_installed_receipt(
     assert receipt["authentication"]["mode"] == "chatgpt_login"
     assert receipt["authentication"]["child_api_keys_present"] is False
     assert receipt["result"]["eval_count"] == 4
-    assert receipt["usage"] == {"input_tokens": 12, "output_tokens": 8}
+    assert receipt["usage"] == FULL_USAGE
     assert receipt["duration_ms"] >= 0
     assert receipt["provenance"]["installed_plugin"] is True
     assert set(receipt["hashes"]) == {
@@ -292,6 +310,28 @@ def test_smoke_writes_sanitized_installed_receipt(
     config = seen["config"]
     assert config.max_evals == 4
     assert config.stop_at_score == 1.0
+
+
+def test_smoke_rejects_mismatched_returned_usage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("GEPA_CODEX_SKILL_DIR", str(_installed_skill(tmp_path)))
+    actual = _evidence()
+    monkeypatch.setattr(
+        smoke,
+        "read_adapter_evidence",
+        lambda *_args, **_kwargs: sys.modules["release_evidence"].AdapterEvidence(
+            invocation_paths=actual.invocation_paths,
+            session_paths=actual.session_paths,
+            usage={**actual.usage, "input_tokens": 13},
+            estimated_cost_usd=actual.estimated_cost_usd,
+            mappings=actual.mappings,
+        ),
+    )
+    monkeypatch.setattr(smoke, "installed_provenance", _provenance)
+
+    with pytest.raises(RuntimeError, match="journal usage is inconsistent"):
+        smoke.run_smoke("gepa", tmp_path / "output", optimize=lambda **_: _Result())
 
 
 @pytest.mark.parametrize(
