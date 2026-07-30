@@ -10,7 +10,6 @@ import stat
 import subprocess
 import sys
 import tempfile
-import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -34,7 +33,7 @@ class RuntimePaths:
     adapter_module: Path
     codex: Path
     codex_home: Path
-    state_dir: Path
+    runs_root: Path
 
 
 def _home(env: dict[str, str] | None = None) -> Path:
@@ -77,23 +76,11 @@ def resolve_codex(home: Path, env: dict[str, str] | None = None) -> Path:
 def runtime_paths(
     *,
     home: Path | None = None,
-    state_dir: Path | None = None,
     env: dict[str, str] | None = None,
 ) -> RuntimePaths:
     environment = env or os.environ
     resolved_home = (home or _home(environment)).expanduser().resolve()
     cache_root = resolved_home / ".cache" / RUNTIME_NAME
-    configured_state = state_dir or (
-        Path(environment["CODEX_ADAPTER_STATE_DIR"])
-        if environment.get("CODEX_ADAPTER_STATE_DIR")
-        else cache_root / "runs" / uuid.uuid4().hex
-    )
-    resolved_state = configured_state.expanduser().resolve()
-    if not _within(resolved_state, cache_root):
-        raise RuntimeError(
-            "CODEX_ADAPTER_STATE_DIR must be an explicit directory under "
-            f"{cache_root}."
-        )
     stage_bin = resolved_home / ".local" / "share" / RUNTIME_NAME / "bin"
     return RuntimePaths(
         home=resolved_home,
@@ -102,8 +89,21 @@ def runtime_paths(
         adapter_module=stage_bin / "codex_claude_adapter.py",
         codex=resolve_codex(resolved_home, environment),
         codex_home=cache_root / "codex",
-        state_dir=resolved_state,
+        runs_root=cache_root / "runs",
     )
+
+
+def resolve_state_dir(paths: RuntimePaths, configured: str | Path | None) -> Path:
+    if not configured:
+        raise RuntimeError("CODEX_ADAPTER_STATE_DIR is required")
+    state_dir = Path(configured).expanduser().resolve()
+    if state_dir == paths.runs_root or not _within(state_dir, paths.runs_root):
+        raise RuntimeError(
+            "CODEX_ADAPTER_STATE_DIR must be an explicit directory under "
+            f"{paths.runs_root}."
+        )
+    state_dir.mkdir(parents=True, exist_ok=True)
+    return state_dir
 
 
 def _copy_if_changed(source: Path, destination: Path, executable: bool = False) -> None:
@@ -117,7 +117,6 @@ def _copy_if_changed(source: Path, destination: Path, executable: bool = False) 
 def stage_runtime(paths: RuntimePaths) -> RuntimePaths:
     paths.stage_bin.mkdir(parents=True, exist_ok=True)
     paths.codex_home.mkdir(parents=True, exist_ok=True)
-    paths.state_dir.mkdir(parents=True, exist_ok=True)
     (paths.home / ".claude").mkdir(parents=True, exist_ok=True)
     claude_json = paths.home / ".claude.json"
     if not claude_json.exists():
@@ -127,10 +126,11 @@ def stage_runtime(paths: RuntimePaths) -> RuntimePaths:
     return paths
 
 
-def runtime_environment(
+def _stable_environment(
     paths: RuntimePaths, env: dict[str, str] | None = None
 ) -> dict[str, str]:
     environment = dict(os.environ if env is None else env)
+    environment.pop("CODEX_ADAPTER_STATE_DIR", None)
     current_path = environment.get("PATH", "")
     environment.update(
         {
@@ -138,9 +138,16 @@ def runtime_environment(
             "PATH": f"{paths.stage_bin}{os.pathsep}{current_path}",
             "CODEX_CLI": str(paths.codex),
             "CODEX_HOME": str(paths.codex_home),
-            "CODEX_ADAPTER_STATE_DIR": str(paths.state_dir),
         }
     )
+    return environment
+
+
+def runtime_environment(
+    paths: RuntimePaths, state_dir: Path, env: dict[str, str] | None = None
+) -> dict[str, str]:
+    environment = _stable_environment(paths, env)
+    environment["CODEX_ADAPTER_STATE_DIR"] = str(resolve_state_dir(paths, state_dir))
     return environment
 
 
@@ -148,7 +155,7 @@ def login_runtime(paths: RuntimePaths) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [str(paths.codex), "login"],
         cwd=paths.home,
-        env=runtime_environment(paths),
+        env=_stable_environment(paths),
         check=False,
     )
 
@@ -196,10 +203,10 @@ for name in ("CODEX_HOME", "CODEX_ADAPTER_STATE_DIR"):
 """
 
 
-def probe_runtime(paths: RuntimePaths) -> subprocess.CompletedProcess[str]:
+def probe_runtime(paths: RuntimePaths, state_dir: Path) -> subprocess.CompletedProcess[str]:
     from gepa.oa.sandbox import bwrap_prefix
 
-    environment = runtime_environment(paths)
+    environment = runtime_environment(paths, state_dir)
     environment["GEPA_CODEX_LAUNCHER"] = str(paths.launcher)
     environment["GEPA_CODEX_ADAPTER_MODULE"] = str(paths.adapter_module)
     with tempfile.TemporaryDirectory(prefix="gepa-codex-probe-") as raw_work_dir:
@@ -226,10 +233,14 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "login":
             return login_runtime(paths).returncode
         if args.command == "probe":
-            result = probe_runtime(paths)
-            if result.returncode != 0:
-                print(result.stderr or result.stdout, file=sys.stderr, end="")
-                return result.returncode or 1
+            paths.runs_root.mkdir(parents=True, exist_ok=True)
+            with tempfile.TemporaryDirectory(
+                prefix="probe-", dir=paths.runs_root
+            ) as raw_state_dir:
+                result = probe_runtime(paths, Path(raw_state_dir))
+                if result.returncode != 0:
+                    print(result.stderr or result.stdout, file=sys.stderr, end="")
+                    return result.returncode or 1
         print(paths.stage_bin)
         return 0
     except (OSError, RuntimeError, subprocess.SubprocessError) as exc:

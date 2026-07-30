@@ -43,11 +43,12 @@ block, and old-API keys (`claude_code_agent`, top-level `reflection_lm_kwargs`, 
 `background` inside `engine_config`) now crash. See `api.md` for each backend's valid keys.
 
 ## 6. Agentic backends have launch-time prerequisites
-`autoresearch` / `meta_harness` invoke a command named `claude`. This port stages that compatibility
-launcher inside GEPA's Bubblewrap jail and invokes Codex. A missing staged launcher, Codex CLI,
-`bwrap`, `jq`, or sandbox authentication fails preflight before the optimizer starts. An explicit
-`--no-sandbox` run is unconfined (loud warning); run
+`autoresearch` and `meta_harness` need the staged Codex runtime. A missing
+runtime, Codex CLI, `bwrap`, `jq`, or sandbox authentication fails preflight
+before the optimizer starts. An explicit `--no-sandbox` run is unconfined
+(loud warning). Run
 `python "$SKILL_DIR/scripts/preflight.py" --engine <engine>` first either way.
+See `runtime.md` for the internal process contract.
 
 ## 7. Give runs a real stop condition (`stop_at_score` / bounded work)
 
@@ -118,7 +119,7 @@ your evaluator stops the whole optimization. Either catch failures yourself and 
 - [ ] `engine_config` keys match the chosen backend (typos raise `TypeError`, #5)
 - [ ] `run_dir` + `output_dir` set (so artifacts persist)
 - [ ] `test_set` passed if you need an unbiased number to report
-- [ ] for agentic backends: Codex adapter `claude` on PATH + Codex auth, `jq` installed, and
+- [ ] for agentic backends: staged Codex runtime + Codex auth, `jq` installed, and
       a passing Bubblewrap preflight with staged ChatGPT login or `CODEX_API_KEY`
 - [ ] for Codex agentic backends: explicitly set `max_evals=10`; for `meta_harness`, set
       `max_iterations=3` and `max_candidates_per_iter=3`; use unique adapter state so its

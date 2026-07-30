@@ -34,14 +34,15 @@ def _sandboxed_runtime(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fake_codex: Path
 ) -> Path:
     fake_home = tmp_path / "home"
-    state_dir = fake_home / ".cache" / "gepa-optimize-anything-codex" / "state" / "test"
+    state_dir = fake_home / ".cache" / "gepa-optimize-anything-codex" / "runs" / "test"
     monkeypatch.setenv("HOME", str(fake_home))
     monkeypatch.setenv("CODEX_CLI", str(fake_codex))
     monkeypatch.setenv("CODEX_ADAPTER_STATE_DIR", str(state_dir))
     paths = sandbox_runtime.stage_runtime(
         sandbox_runtime.runtime_paths(home=fake_home)
     )
-    for name, value in sandbox_runtime.runtime_environment(paths).items():
+    state_dir = sandbox_runtime.resolve_state_dir(paths, state_dir)
+    for name, value in sandbox_runtime.runtime_environment(paths, state_dir).items():
         monkeypatch.setenv(name, value)
     return state_dir
 

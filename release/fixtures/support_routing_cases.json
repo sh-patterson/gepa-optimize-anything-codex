@@ -1,0 +1,44 @@
+{
+  "cases": [
+    {
+      "id": "billing_duplicate",
+      "message": "I was charged twice",
+      "route": "billing"
+    },
+    {
+      "id": "billing_invoice",
+      "message": "Where is my invoice?",
+      "route": "billing"
+    },
+    {
+      "id": "support_refund",
+      "message": "I need a refund",
+      "route": "support"
+    },
+    {
+      "id": "support_cancel",
+      "message": "Cancel and refund my plan",
+      "route": "support"
+    },
+    {
+      "id": "security_password",
+      "message": "Reset my password",
+      "route": "account_security"
+    },
+    {
+      "id": "security_login",
+      "message": "My login code never arrived",
+      "route": "account_security"
+    },
+    {
+      "id": "technical_crash",
+      "message": "The app crashes on startup",
+      "route": "technical"
+    },
+    {
+      "id": "general_hours",
+      "message": "What are your hours?",
+      "route": "general"
+    }
+  ]
+}

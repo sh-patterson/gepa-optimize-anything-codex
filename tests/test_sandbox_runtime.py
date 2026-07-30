@@ -43,9 +43,6 @@ def test_stage_is_idempotent_and_never_replaces_local_bin_claude(tmp_path: Path)
     environment = {
         "HOME": str(home),
         "CODEX_CLI": str(codex),
-        "CODEX_ADAPTER_STATE_DIR": str(
-            home / ".cache" / sandbox_runtime.RUNTIME_NAME / "state" / "test"
-        ),
     }
 
     paths = sandbox_runtime.runtime_paths(home=home, env=environment)
@@ -59,6 +56,7 @@ def test_stage_is_idempotent_and_never_replaces_local_bin_claude(tmp_path: Path)
     assert original_claude.read_text(encoding="utf-8") == "user launcher\n"
     assert (home / ".claude").is_dir()
     assert (home / ".claude.json").read_text(encoding="utf-8") == "{}\n"
+    assert not paths.runs_root.exists()
 
 
 def test_runtime_paths_require_codex_in_a_bwrap_visible_location(tmp_path: Path) -> None:
@@ -77,25 +75,43 @@ def test_runtime_paths_require_codex_in_a_bwrap_visible_location(tmp_path: Path)
 def test_runtime_environment_isolated_to_the_staged_home_and_cache(tmp_path: Path) -> None:
     home = tmp_path / "home"
     codex = _fake_codex(home)
-    state = home / ".cache" / sandbox_runtime.RUNTIME_NAME / "state" / "explicit"
+    state = home / ".cache" / sandbox_runtime.RUNTIME_NAME / "runs" / "explicit"
     paths = sandbox_runtime.stage_runtime(
         sandbox_runtime.runtime_paths(
             home=home,
-            state_dir=state,
             env={"HOME": str(home), "CODEX_CLI": str(codex)},
         )
     )
+    state = sandbox_runtime.resolve_state_dir(paths, state)
 
-    environment = sandbox_runtime.runtime_environment(paths, env={"PATH": os.defpath})
+    environment = sandbox_runtime.runtime_environment(
+        paths, state, env={"PATH": os.defpath}
+    )
 
     assert environment["PATH"].split(os.pathsep)[0] == str(paths.stage_bin)
     assert environment["CODEX_HOME"] == str(paths.codex_home)
     assert environment["CODEX_ADAPTER_STATE_DIR"] == str(state)
 
 
+def test_state_dir_must_be_an_explicit_child_of_runs_root(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    codex = _fake_codex(home)
+    paths = sandbox_runtime.runtime_paths(
+        home=home, env={"HOME": str(home), "CODEX_CLI": str(codex)}
+    )
+
+    with pytest.raises(RuntimeError, match="CODEX_ADAPTER_STATE_DIR is required"):
+        sandbox_runtime.resolve_state_dir(paths, None)
+    with pytest.raises(RuntimeError, match="under"):
+        sandbox_runtime.resolve_state_dir(paths, tmp_path / "outside")
+    with pytest.raises(RuntimeError, match="under"):
+        sandbox_runtime.runtime_environment(paths, paths.runs_root)
+
+
 def test_login_runtime_uses_the_staged_home_and_cache(tmp_path: Path, monkeypatch) -> None:
     home = tmp_path / "home"
     codex = _fake_codex(home)
+    monkeypatch.setenv("CODEX_ADAPTER_STATE_DIR", str(tmp_path / "inherited-state"))
     paths = sandbox_runtime.stage_runtime(
         sandbox_runtime.runtime_paths(
             home=home,
@@ -115,7 +131,31 @@ def test_login_runtime_uses_the_staged_home_and_cache(tmp_path: Path, monkeypatc
     assert captured["command"] == [str(paths.codex), "login"]
     assert captured["cwd"] == paths.home
     assert captured["env"]["CODEX_HOME"] == str(paths.codex_home)
+    assert "CODEX_ADAPTER_STATE_DIR" not in captured["env"]
     assert "capture_output" not in captured
+    assert not paths.runs_root.exists()
+
+
+def test_cli_probe_cleans_its_temporary_run_state(
+    tmp_path: Path, monkeypatch
+) -> None:
+    home = tmp_path / "home"
+    codex = _fake_codex(home)
+    captured: list[Path] = []
+
+    def probe(paths, state_dir):
+        captured.append(state_dir)
+        assert state_dir.is_dir()
+        return subprocess.CompletedProcess([], 0, "", "")
+
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("CODEX_CLI", str(codex))
+    monkeypatch.setattr(sandbox_runtime, "probe_runtime", probe)
+
+    assert sandbox_runtime.main(["probe"]) == 0
+    assert len(captured) == 1
+    assert captured[0].parent == home / ".cache" / sandbox_runtime.RUNTIME_NAME / "runs"
+    assert not captured[0].exists()
 
 
 @pytest.mark.skipif(
@@ -152,13 +192,13 @@ exit 1
     paths = sandbox_runtime.stage_runtime(
         sandbox_runtime.runtime_paths(
             home=home,
-            state_dir=state_dir,
             env={"HOME": str(home), "CODEX_CLI": str(codex)},
         )
     )
+    state_dir = sandbox_runtime.resolve_state_dir(paths, state_dir)
     (paths.codex_home / ".fake-staged-login").write_text("present", encoding="utf-8")
 
-    result = sandbox_runtime.probe_runtime(paths)
+    result = sandbox_runtime.probe_runtime(paths, state_dir)
 
     assert result.returncode == 0, result.stderr or result.stdout
     assert (paths.codex_home / ".login-probed-inside-bwrap").is_file()

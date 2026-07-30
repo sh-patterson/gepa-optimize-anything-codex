@@ -67,7 +67,9 @@ def test_sandbox_accepts_a_staged_codex_login(monkeypatch):
     staged_environment = {"CODEX_HOME": "/tmp/staged-codex-home"}
     captured = {}
     monkeypatch.setattr(
-        preflight, "runtime_environment", lambda _paths: staged_environment
+        preflight,
+        "runtime_environment",
+        lambda _paths, _state_dir: staged_environment,
     )
     monkeypatch.setattr(
         preflight.subprocess,
@@ -78,7 +80,7 @@ def test_sandbox_accepts_a_staged_codex_login(monkeypatch):
         ),
     )
 
-    assert preflight._sandbox_auth_available(paths) == (
+    assert preflight._sandbox_auth_available(paths, Path("/tmp/state")) == (
         True,
         "Codex CLI login configuration (token freshness untested)",
     )
@@ -90,7 +92,9 @@ def test_sandbox_rejects_openai_api_key_without_a_staged_login(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "not-valid-for-sandbox-preflight")
     paths = SimpleNamespace(codex=Path("/usr/local/bin/codex"))
     monkeypatch.setattr(
-        preflight, "runtime_environment", lambda _paths: {"CODEX_HOME": "/tmp/home"}
+        preflight,
+        "runtime_environment",
+        lambda _paths, _state_dir: {"CODEX_HOME": "/tmp/home"},
     )
     monkeypatch.setattr(
         preflight.subprocess,
@@ -98,14 +102,16 @@ def test_sandbox_rejects_openai_api_key_without_a_staged_login(monkeypatch):
         lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 1, "", "no login"),
     )
 
-    assert preflight._sandbox_auth_available(paths) == (False, "")
+    assert preflight._sandbox_auth_available(paths, Path("/tmp/state")) == (False, "")
 
 
 def test_sandbox_api_key_skips_login_status(monkeypatch):
     monkeypatch.setenv("CODEX_API_KEY", "test-key")
     paths = SimpleNamespace(codex=Path("/usr/local/bin/codex"))
     monkeypatch.setattr(
-        preflight, "runtime_environment", lambda _paths: {"CODEX_API_KEY": "test-key"}
+        preflight,
+        "runtime_environment",
+        lambda _paths, _state_dir: {"CODEX_API_KEY": "test-key"},
     )
     monkeypatch.setattr(
         preflight.subprocess,
@@ -113,7 +119,10 @@ def test_sandbox_api_key_skips_login_status(monkeypatch):
         lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("unexpected")),
     )
 
-    assert preflight._sandbox_auth_available(paths) == (True, "CODEX_API_KEY")
+    assert preflight._sandbox_auth_available(paths, Path("/tmp/state")) == (
+        True,
+        "CODEX_API_KEY",
+    )
 
 
 def test_sandbox_paths_must_match_the_exported_runtime(monkeypatch, tmp_path):

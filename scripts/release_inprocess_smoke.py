@@ -2,13 +2,10 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import importlib.metadata
 import importlib.util
 import json
 import os
-import subprocess
 import sys
-import tempfile
 import time
 import tomllib
 from pathlib import Path
@@ -23,74 +20,28 @@ MAX_ADAPTER_INVOCATIONS = 4
 SEED = "Return RED."
 TARGET = "Return BLUE."
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from release_evidence import (  # noqa: E402
+    hash_files,
+    installed_provenance,
+    read_adapter_evidence,
+    write_verified_receipt,
+)
 
 
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as source:
-        for chunk in iter(lambda: source.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def _git_commit(path: Path) -> str:
-    completed = subprocess.run(
-        ["git", "-C", str(path), "rev-parse", "HEAD"],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    commit = completed.stdout.strip()
-    if completed.returncode == 0 and len(commit) == 40:
-        return commit
-    try:
-        archived_commit = (path / "release" / "COMMIT").read_text(
-            encoding="utf-8"
-        ).strip()
-    except OSError as exc:
-        raise RuntimeError("cannot resolve release runner commit") from exc
-    if len(archived_commit) == 40 and all(
-        character in "0123456789abcdef" for character in archived_commit
-    ):
-        return archived_commit
-    raise RuntimeError("cannot resolve release runner commit")
-
-
-def _installed_vcs_commit(package: str) -> str:
-    raw = importlib.metadata.distribution(package).read_text("direct_url.json")
-    try:
-        payload = json.loads(raw or "")
-        commit = payload["vcs_info"]["commit_id"]
-    except (KeyError, TypeError, json.JSONDecodeError) as exc:
-        raise RuntimeError(f"cannot resolve installed {package} commit") from exc
-    if not isinstance(commit, str) or len(commit) != 40:
-        raise RuntimeError(f"cannot resolve installed {package} commit")
-    return commit
-
-
-def _installed_skill() -> tuple[Path, Path]:
+def installed_skill_path() -> Path:
     configured = os.environ.get("GEPA_CODEX_SKILL_DIR")
     if not configured:
         raise RuntimeError("in-process smoke requires GEPA_CODEX_SKILL_DIR")
-    skill = Path(configured).expanduser().resolve()
-    try:
-        skill.relative_to(REPOSITORY_ROOT)
-    except ValueError:
-        pass
-    else:
-        raise RuntimeError("in-process smoke requires an installed plugin")
-    if not (skill / "SKILL.md").is_file():
-        raise RuntimeError("installed skill is missing SKILL.md")
-    manifest = skill.parents[1] / ".codex-plugin" / "plugin.json"
-    try:
-        payload = json.loads(manifest.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise RuntimeError("installed plugin manifest is missing or invalid") from exc
+    return Path(configured).expanduser().resolve()
+
+
+def _project_version() -> str:
     with (REPOSITORY_ROOT / "pyproject.toml").open("rb") as source:
-        expected_version = tomllib.load(source)["project"]["version"]
-    if not isinstance(payload, dict) or payload.get("version") != expected_version:
-        raise RuntimeError("installed plugin version does not match the runner")
-    return skill, manifest
+        return str(tomllib.load(source)["project"]["version"])
 
 
 def _evaluate(candidate: str, _example: object = None) -> tuple[float, dict[str, str]]:
@@ -175,27 +126,6 @@ def _result(result: object) -> dict[str, Any]:
     }
 
 
-def _atomic_receipt(path: Path, receipt: dict[str, Any]) -> None:
-    temporary: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=path.parent,
-            prefix=f".{path.stem}.",
-            suffix=".tmp",
-            delete=False,
-        ) as target:
-            temporary = Path(target.name)
-            json.dump(receipt, target, indent=2, sort_keys=True)
-            target.write("\n")
-        os.replace(temporary, path)
-    except OSError:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
-        raise
-
-
 def _load_script(path: Path, name: str) -> object:
     spec = importlib.util.spec_from_file_location(name, path)
     if spec is None or spec.loader is None:
@@ -214,7 +144,7 @@ def _prepare_codex_runtime(skill: Path, work_dir: Path) -> dict[str, Any]:
         f"release_inprocess_runtime_{uuid4().hex}",
     )
     driver = _load_script(
-        skill / "scripts" / "codex_lm.py",
+        REPOSITORY_ROOT / "scripts" / "release_codex_lm.py",
         f"release_inprocess_driver_{uuid4().hex}",
     )
     state_dir = (
@@ -224,13 +154,14 @@ def _prepare_codex_runtime(skill: Path, work_dir: Path) -> dict[str, Any]:
         / "runs"
         / f"release-inprocess-{uuid4().hex}"
     )
-    paths = runtime.stage_runtime(runtime.runtime_paths(state_dir=state_dir))
-    probe = runtime.probe_runtime(paths)
+    paths = runtime.stage_runtime(runtime.runtime_paths())
+    state_dir = runtime.resolve_state_dir(paths, state_dir)
+    probe = runtime.probe_runtime(paths, state_dir)
     if probe.returncode != 0:
         raise RuntimeError(
             (probe.stderr or probe.stdout or "Bubblewrap runtime probe failed").strip()
         )
-    environment = runtime.runtime_environment(paths)
+    environment = runtime.runtime_environment(paths, state_dir)
     environment.update(
         {
             "CODEX_ADAPTER_AUTH_MODE": "chatgpt_login",
@@ -249,76 +180,9 @@ def _prepare_codex_runtime(skill: Path, work_dir: Path) -> dict[str, Any]:
     }
 
 
-def _journal_evidence(
-    state_dir: Path, expected_invocations: int, expected_usage: dict[str, int]
-) -> dict[str, Any]:
-    invocation_paths = sorted((state_dir / "invocations").glob("*.json"))
-    records = [
-        json.loads(path.read_text(encoding="utf-8")) for path in invocation_paths
-    ]
-    if len(records) != expected_invocations or not records:
-        raise RuntimeError("adapter journal invocation count is inconsistent")
-    if any(
-        record.get("terminal_status") != "completed"
-        or record.get("return_code") != 0
-        or record.get("target_model") != MODEL
-        or record.get("reasoning_effort") != REASONING_EFFORT
-        for record in records
-    ):
-        raise RuntimeError("adapter journal contains an incomplete invocation")
-    journal_usage = {
-        name: sum(int(record["usage"].get(name, 0)) for record in records)
-        for name in ("input_tokens", "output_tokens")
-    }
-    if journal_usage != expected_usage:
-        raise RuntimeError("adapter journal usage is inconsistent")
-    estimated_cost = sum(float(record["estimated_cost_usd"]) for record in records)
-    if estimated_cost <= 0:
-        raise RuntimeError("adapter journal has no positive cost estimate")
-    mappings = [
-        {
-            "upstream_session_id": record.get("upstream_session_id"),
-            "codex_thread_id": record.get("codex_thread_id"),
-        }
-        for record in records
-    ]
-    if any(not item["upstream_session_id"] or not item["codex_thread_id"] for item in mappings):
-        raise RuntimeError("adapter journal session mapping is incomplete")
-    session_paths = sorted((state_dir / "sessions").glob("*.json"))
-    if len(session_paths) != len({item["upstream_session_id"] for item in mappings}):
-        raise RuntimeError("adapter journal session evidence is inconsistent")
-    sessions = [
-        json.loads(path.read_text(encoding="utf-8")) for path in session_paths
-    ]
-    expected_mappings = {
-        (item["upstream_session_id"], item["codex_thread_id"]) for item in mappings
-    }
-    actual_mappings = {
-        (session.get("upstream_session_id"), session.get("thread_id"))
-        for session in sessions
-    }
-    if actual_mappings != expected_mappings:
-        raise RuntimeError("adapter journal session evidence is inconsistent")
-    return {
-        "invocation_count": len(records),
-        "estimated_cost_usd": estimated_cost,
-        "session_mapping": mappings,
-        "evidence_files": {
-            **{
-                f"invocation_{index}": path
-                for index, path in enumerate(invocation_paths, start=1)
-            },
-            **{
-                f"session_{index}": path
-                for index, path in enumerate(session_paths, start=1)
-            },
-        },
-    }
-
-
 def _run_codex(
     engine: str, values: dict[str, Any], runtime: dict[str, Any]
-) -> tuple[object, dict[str, int], dict[str, Any]]:
+) -> tuple[object, dict[str, int], list[object]]:
     from gepa.optimize_anything import OptimizeAnythingConfig, optimize_anything
 
     lms: list[object] = []
@@ -361,15 +225,7 @@ def _run_codex(
         finally:
             best_of_n.LM = native_lm
     usage = _codex_usage(lms)
-    expected_invocations = sum(int(getattr(lm, "invocation_count", 0)) for lm in lms)
-    evidence = _journal_evidence(
-        runtime["state_dir"], expected_invocations, usage
-    )
-    driver_cost = sum(float(getattr(lm, "total_cost", 0.0)) for lm in lms)
-    if abs(driver_cost - evidence["estimated_cost_usd"]) > 1e-9:
-        raise RuntimeError("adapter journal cost estimate is inconsistent")
-    evidence["probe_success"] = runtime["probe_success"]
-    return raw, usage, evidence
+    return raw, usage, lms
 
 
 def run_smoke(
@@ -378,13 +234,19 @@ def run_smoke(
     *,
     optimize: Callable[..., Any] | None = None,
 ) -> dict[str, Any]:
-    skill, manifest = _installed_skill()
+    skill = installed_skill_path()
+    provenance = installed_provenance(skill, REPOSITORY_ROOT, _project_version())
+    manifest = Path(provenance["plugin_manifest"])
     output_dir.mkdir(parents=True, exist_ok=False)
     started = time.monotonic()
     values = config_for(engine, output_dir)
     if optimize is None:
         runtime = _prepare_codex_runtime(skill, output_dir)
-        raw, usage, runtime_evidence = _run_codex(engine, values, runtime)
+        raw, usage, lms = _run_codex(engine, values, runtime)
+        expected_invocations = sum(
+            int(getattr(lm, "invocation_count", 0)) for lm in lms
+        )
+        driver_cost = sum(float(getattr(lm, "total_cost", 0.0)) for lm in lms)
     else:
         from gepa.optimize_anything import OptimizeAnythingConfig
 
@@ -398,22 +260,37 @@ def run_smoke(
         runtime = {
             "launcher": skill / "scripts" / "claude",
             "adapter": skill / "scripts" / "codex_claude_adapter.py",
+            "state_dir": output_dir / "adapter-state",
+            "probe_success": True,
         }
-        runtime_evidence = {
-            "invocation_count": 1,
-            "estimated_cost_usd": 0.001,
-            "session_mapping": [{"upstream_session_id": "test", "codex_thread_id": "test"}],
-            "evidence_files": {},
-        }
+        expected_invocations = 1
+        driver_cost = 0.001
+    evidence = read_adapter_evidence(
+        runtime["state_dir"],
+        target_model=MODEL,
+        reasoning_effort=REASONING_EFFORT,
+        expected_invocations=expected_invocations,
+    )
+    if evidence.usage != usage:
+        raise RuntimeError("adapter journal usage is inconsistent")
+    if abs(driver_cost - evidence.estimated_cost_usd) > 1e-9:
+        raise RuntimeError("adapter journal cost estimate is inconsistent")
     result = _result(raw)
     duration_ms = round((time.monotonic() - started) * 1000)
     source_files = {
         "skill": skill / "SKILL.md",
         "plugin_manifest": manifest,
         "runner": Path(__file__).resolve(),
-        "codex_lm": skill / "scripts" / "codex_lm.py",
+        "release_codex_lm": REPOSITORY_ROOT / "scripts" / "release_codex_lm.py",
         "adapter": runtime["adapter"],
-        **runtime_evidence["evidence_files"],
+        **{
+            f"invocation_{index}": path
+            for index, path in enumerate(evidence.invocation_paths, start=1)
+        },
+        **{
+            f"session_{index}": path
+            for index, path in enumerate(evidence.session_paths, start=1)
+        },
     }
     receipt = {
         "schema_version": 2,
@@ -435,34 +312,31 @@ def run_smoke(
         },
         "sandbox": {
             "codex_workspace_write": True,
-            "bubblewrap_probe_success": runtime_evidence.get("probe_success", True),
+            "bubblewrap_probe_success": runtime["probe_success"],
         },
         "result": result,
         "usage": usage,
         "cost": {
-            "estimated_usd": runtime_evidence["estimated_cost_usd"],
+            "estimated_usd": evidence.estimated_cost_usd,
             "status": "standard_tier_upper_estimate_from_observed_usage",
         },
-        "invocation_count": runtime_evidence["invocation_count"],
-        "session_mapping": runtime_evidence["session_mapping"],
+        "invocation_count": len(evidence.invocation_paths),
+        "session_mapping": [
+            {
+                "upstream_session_id": mapping["upstream_session_id"],
+                "codex_thread_id": mapping["codex_thread_id"],
+            }
+            for mapping in evidence.mappings
+        ],
         "duration_ms": duration_ms,
         "provenance": {
-            "installed_plugin": True,
-            "skill_path": str(skill),
-            "plugin_manifest": str(manifest),
-            "plugin_version": json.loads(manifest.read_text(encoding="utf-8"))[
-                "version"
-            ],
-            "repository_commit": _git_commit(REPOSITORY_ROOT),
-            "gepa_commit": _installed_vcs_commit("gepa"),
+            **provenance,
         },
-        "hashes": {name: _sha256(path) for name, path in source_files.items()},
+        "hashes": hash_files(source_files),
     }
     receipt_path = output_dir / f"{engine}-receipt.json"
     receipt["receipt_path"] = str(receipt_path)
-    _atomic_receipt(receipt_path, receipt)
-    if json.loads(receipt_path.read_text(encoding="utf-8")) != receipt:
-        raise RuntimeError("persisted receipt does not match the completed run")
+    write_verified_receipt(receipt_path, receipt)
     return receipt
 
 

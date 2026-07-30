@@ -5,6 +5,7 @@ import json
 import os
 import stat
 import sys
+from hashlib import sha256
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "installed_skill_dogfood.py"
+FIXTURES = ROOT / "release" / "fixtures"
 SPEC = importlib.util.spec_from_file_location("installed_skill_dogfood_test", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
 dogfood = importlib.util.module_from_spec(SPEC)
@@ -45,28 +47,35 @@ def _installed_skill(tmp_path: Path) -> Path:
     (skill / "SKILL.md").write_text("# installed\n", encoding="utf-8")
     manifest = plugin / ".codex-plugin" / "plugin.json"
     manifest.parent.mkdir()
-    manifest.write_text('{"version":"1.0.0"}\n', encoding="utf-8")
+    manifest.write_text('{"version":"1.0.1"}\n', encoding="utf-8")
     (skill / "scripts").mkdir()
     return skill
 
 
-def _load_generated_task(tmp_path: Path) -> object:
-    fixture, task = dogfood._write_fixture(tmp_path)
-    spec = importlib.util.spec_from_file_location("generated_routing_task", task)
+def _load_task(path: Path) -> object:
+    spec = importlib.util.spec_from_file_location("support_routing_task", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    module.cases = dogfood._task_fixture(fixture)
     return module
 
 
-def test_routing_fixture_has_eight_cases_and_seed_passes_only_fallback(
-    tmp_path: Path,
-) -> None:
-    task = _load_generated_task(tmp_path)
-    assert 'output_dir.glob("work/agents/iter*.txt")' in dogfood.TASK_SOURCE
+def _provenance(skill: Path, *_args: object, **_kwargs: object) -> dict[str, object]:
+    return {
+        "installed_plugin": True,
+        "skill_path": str(skill),
+        "plugin_manifest": str(skill.parents[1] / ".codex-plugin" / "plugin.json"),
+        "plugin_version": "1.0.1",
+        "repository_commit": "a" * 40,
+        "gepa_commit": "b" * 40,
+    }
 
-    seed_score, failed, valid = task.score_candidate(dogfood.SEED, task.cases)
+
+def test_canonical_routing_task_has_eight_cases_and_seed_passes_only_fallback() -> None:
+    task = _load_task(FIXTURES / "support_routing_task.py")
+    cases = dogfood._task_fixture(FIXTURES / "support_routing_cases.json")
+
+    seed_score, failed, valid = task.score_candidate(dogfood.SEED, cases)
     assert valid is True
     assert seed_score == 0.125
     assert len(failed) == 7
@@ -85,10 +94,26 @@ def test_routing_fixture_has_eight_cases_and_seed_passes_only_fallback(
             "default": "general",
         }
     )
-    score, failed, valid = task.score_candidate(winner, task.cases)
+    score, failed, valid = task.score_candidate(winner, cases)
     assert valid is True
     assert score == 1.0
     assert failed == []
+
+
+def test_fixture_copies_match_canonical_sources_byte_for_byte(tmp_path: Path) -> None:
+    fixture, task = dogfood._write_fixture(tmp_path)
+
+    assert fixture.read_bytes() == dogfood.ROUTING_CASES_FIXTURE.read_bytes()
+    assert task.read_bytes() == dogfood.TASK_FIXTURE.read_bytes()
+
+
+def test_runner_has_no_embedded_fixture_constants() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+
+    assert not hasattr(dogfood, "ROUTING_CASES")
+    assert not hasattr(dogfood, "TASK_SOURCE")
+    assert "ROUTING_CASES =" not in source
+    assert "TASK_SOURCE" not in source
 
 
 @pytest.mark.parametrize(
@@ -147,7 +172,7 @@ def test_outer_codex_rejects_missing_usage_and_terminal_ambiguity(
         / "scripts"
         / "codex_claude_adapter.py"
     )
-    adapter = dogfood.release._load_module("dogfood_test_adapter", adapter_path)
+    adapter = dogfood._load_module("dogfood_test_adapter", adapter_path)
     fake = tmp_path / "codex"
 
     for events, error in (
@@ -238,10 +263,10 @@ def test_fake_codex_run_writes_sanitized_hashed_receipt(
         / "scripts"
         / "codex_claude_adapter.py"
     )
-    adapter = dogfood.release._load_module("dogfood_success_adapter", adapter_path)
-    monkeypatch.setattr(dogfood.release, "skill_dir", lambda: skill)
+    adapter = dogfood._load_module("dogfood_success_adapter", adapter_path)
+    monkeypatch.setattr(dogfood, "installed_skill_path", lambda: skill)
     monkeypatch.setattr(
-        dogfood.release,
+        dogfood,
         "stage_and_preflight",
         lambda _skill, _engine, state_dir: (
             {
@@ -259,17 +284,11 @@ def test_fake_codex_run_writes_sanitized_hashed_receipt(
             },
         ),
     )
-    monkeypatch.setattr(dogfood.release, "_load_module", lambda _name, _path: adapter)
+    monkeypatch.setattr(dogfood, "_load_module", lambda _name, _path: adapter)
     monkeypatch.setattr(
         dogfood,
-        "_source",
-        lambda _skill, staged: {
-            "installed_plugin": True,
-            "plugin_version": "1.0.0",
-            "repository_commit": "a" * 40,
-            "gepa_commit": "b" * 40,
-            **staged,
-        },
+        "installed_provenance",
+        _provenance,
     )
 
     receipt = dogfood.run_dogfood(tmp_path / "output")
@@ -281,6 +300,7 @@ def test_fake_codex_run_writes_sanitized_hashed_receipt(
         "outer_codex": {"input_tokens": 20, "output_tokens": 3},
         "optimizer_codex": {"input_tokens": 10, "output_tokens": 2},
     }
+    assert receipt["cost"]["optimizer_estimated_usd"] == pytest.approx(0.001)
     assert receipt["terminal"]["outer"]["thread_id"] == "outer-thread"
     assert receipt["terminal"]["optimizer"]["ambiguous_retry"] is False
     assert set(receipt["hashes"]) == {
@@ -293,6 +313,12 @@ def test_fake_codex_run_writes_sanitized_hashed_receipt(
         "outer_terminal",
         "session",
     }
+    assert receipt["hashes"]["task_runner"] == sha256(
+        (tmp_path / "output" / "support_routing_task.py").read_bytes()
+    ).hexdigest()
+    assert receipt["hashes"]["evaluator_fixture"] == sha256(
+        (tmp_path / "output" / "support_routing_cases.json").read_bytes()
+    ).hexdigest()
     serialized = json.dumps(receipt)
     assert "Use $gepa" not in serialized
     assert "routes" not in serialized
@@ -307,17 +333,18 @@ def test_runner_rejects_wrong_provenance_and_retry_leakage(
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setattr(
-        dogfood.release,
-        "skill_dir",
+        dogfood,
+        "installed_skill_path",
         lambda: (_ for _ in ()).throw(RuntimeError("requires an installed plugin")),
     )
     with pytest.raises(RuntimeError, match="installed plugin"):
         dogfood.run_dogfood(tmp_path / "wrong-provenance")
 
     skill = _installed_skill(tmp_path / "retry")
-    monkeypatch.setattr(dogfood.release, "skill_dir", lambda: skill)
+    monkeypatch.setattr(dogfood, "installed_skill_path", lambda: skill)
+    monkeypatch.setattr(dogfood, "installed_provenance", _provenance)
     monkeypatch.setattr(
-        dogfood.release,
+        dogfood,
         "stage_and_preflight",
         lambda _skill, _engine, state_dir: (
             {
@@ -337,9 +364,10 @@ def test_runner_rejects_fabricated_result_before_result_validation(
 ) -> None:
     skill = _installed_skill(tmp_path)
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    monkeypatch.setattr(dogfood.release, "skill_dir", lambda: skill)
+    monkeypatch.setattr(dogfood, "installed_skill_path", lambda: skill)
+    monkeypatch.setattr(dogfood, "installed_provenance", _provenance)
     monkeypatch.setattr(
-        dogfood.release,
+        dogfood,
         "stage_and_preflight",
         lambda _skill, _engine, state_dir: (
             {
@@ -353,7 +381,7 @@ def test_runner_rejects_fabricated_result_before_result_validation(
             {"probe_success": True},
         ),
     )
-    monkeypatch.setattr(dogfood.release, "_load_module", lambda _name, _path: object())
+    monkeypatch.setattr(dogfood, "_load_module", lambda _name, _path: object())
 
     def fabricate_result(
         _command: list[str], environment: dict[str, str], _adapter: object

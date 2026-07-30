@@ -1,171 +1,90 @@
 # GEPA Optimize Anything for Codex
 
-This repository packages GEPA's `optimize_anything` workflow for Codex. It
-keeps GEPA's candidate, evaluator, and engine logic intact. A narrow
-compatibility command lets the `autoresearch` and `meta_harness` engines use
-Codex in place of Claude Code.
-
-The repository is a Codex marketplace containing one skills-only plugin.
-
-The included command is named `claude` because that is the interface GEPA
-currently invokes. It translates the supported flags into `codex exec`,
-converts Codex JSON events into the result shape GEPA expects, and maps
-upstream session IDs to resumable Codex threads.
+This marketplace packages GEPA's `optimize_anything` skill for Codex. GEPA
+keeps ownership of candidates, evaluators, engines, and result objects. The
+plugin adds the Linux runtime needed for its two agentic engines to use Codex.
 
 ## Install
-
-Add the GitHub marketplace, then install the plugin:
 
 ```bash
 codex plugin marketplace add sh-patterson/gepa-optimize-anything-codex
 codex plugin add gepa-optimize-anything@gepa-optimize-anything-codex
 ```
 
-Start a new Codex task after installation. Invoke
-`$gepa-optimize-anything:gepa-optimize-anything-codex` with the artifact and
-evaluator you want to improve.
+Start a new Codex task after installation. Ask for the installed skill in plain
+language:
 
-When invoked, the skill directs Codex to install pinned GEPA when needed and
-launch it with the bundled adapter first on `PATH`. This plugin targets Codex
-CLI and Codex desktop. Agentic runs require Linux, Bubblewrap, the Codex CLI,
-`jq`, and either an isolated ChatGPT login or `CODEX_API_KEY`; in-process GEPA
-and `best_of_n` retain GEPA's upstream LM interface and do not require that
-agentic jail. The public Codex adapter supports `autoresearch` and
-`meta_harness`; it does not replace the in-process LM interface.
+```text
+Use $gepa-optimize-anything:gepa-optimize-anything-codex to improve
+support-policy.json against tests/route_cases.json with MetaHarness.
+```
 
-The adapter translates GEPA's upstream `claude-sonnet-4-6` default to
-`gpt-5.6-luna` with `high` reasoning. It also accepts the target model name
-when a caller supplies it directly. Other source model names fail before
-Codex starts. Its token-derived USD field is a conservative standard-tier
-estimate that prices uncached input at the cache-write rate and applies the
-long-context multiplier; it is not provider billing.
+The skill helps define the evaluator, choose an engine, set bounded work, run
+preflight, and inspect the result.
 
-## Supported agentic configuration
+## Supported engines
 
-The compatibility command is Linux-only and uses GEPA's default Bubblewrap
-sandbox. Install Codex with
-`npm install --prefix "$HOME/.local" @openai/codex@0.146.0`, prepend
-`~/.local/node_modules/.bin` to `PATH`, and stage the adapter with
-`sandbox_runtime.py stage`. Unless you set `CODEX_API_KEY`, run
-`sandbox_runtime.py login` once to authenticate the staged runtime through
-ChatGPT. Export
-`CODEX_HOME="$HOME/.cache/gepa-optimize-anything-codex/codex"` and a unique
+| Engine | Execution | Model interface | Platform |
+|---|---|---|---|
+| `gepa` | In process | GEPA's upstream LM interface | Any GEPA-supported host |
+| `best_of_n` | In process | GEPA's upstream LM interface | Any GEPA-supported host |
+| `autoresearch` | Codex subprocess | Installed Codex adapter | Linux with Bubblewrap |
+| `meta_harness` | Codex subprocess | Installed Codex adapter | Linux with Bubblewrap |
+
+The public Codex adapter supports `autoresearch` and `meta_harness`. It does not
+replace GEPA's in-process LM interface or add a new optimizer.
+
+## Requirements
+
+Install the pinned GEPA dependency with the repository's `live` extra. The
+in-process engines also need the credentials required by their configured
+provider model.
+
+Agentic runs need Linux, Bubblewrap, `jq`, and Codex CLI 0.146.0 installed at a
+Bubblewrap-visible path:
+
+```bash
+npm install --prefix "$HOME/.local" @openai/codex@0.146.0
+export PATH="$HOME/.local/node_modules/.bin:$PATH"
+python "$SKILL_DIR/scripts/sandbox_runtime.py" stage
+```
+
+Use `sandbox_runtime.py login` once for an isolated ChatGPT login, or set
+`CODEX_API_KEY`. Set `CODEX_HOME` to
+`~/.cache/gepa-optimize-anything-codex/codex` and give each run a unique
 `CODEX_ADAPTER_STATE_DIR` beneath
-`$HOME/.cache/gepa-optimize-anything-codex/runs`. Run preflight before starting
-an agentic engine.
+`~/.cache/gepa-optimize-anything-codex/runs`. Run
+`preflight.py --engine <engine>` before starting an agentic optimizer.
 
-Do not set `max_token_cost` for `autoresearch` or `meta_harness`. GEPA sends it
-to the compatibility command as `--max-budget-usd`; the adapter rejects that
-flag before spawning Codex because it cannot enforce a USD ceiling.
+## Limits
 
-Callers must explicitly set the bounded GEPA configuration for Codex agentic
-runs:
+Do not set `max_token_cost` for `autoresearch` or `meta_harness`. The adapter
+rejects it before Codex starts because Codex cannot enforce GEPA's exact USD
+contract. Journaled token usage produces an estimate, not a provider billing
+receipt.
 
-- `max_evals=10` for either agentic engine;
-- for `meta_harness`, `max_iterations=3` and
-  `max_candidates_per_iter=3`.
+Callers must explicitly set `max_evals=10` for agentic engines and, for
+MetaHarness, `max_iterations=3` with `max_candidates_per_iter=3`. The adapter
+alone enforces a default of four atomic starts per state directory. It retries
+once only when Codex is known not to have started.
+Ambiguous, usage-bearing, and completed calls are never retried.
 
-The adapter alone enforces a default of four atomic starts per state directory.
-It retries once only when Codex is known not to have started. The retry consumes
-one of the four starts. Ambiguous, usage-bearing, and completed calls are never
-retried. Set `CODEX_ADAPTER_MAX_INVOCATIONS` to a different positive integer to
-override the adapter ceiling. Set `CODEX_ADAPTER_PRE_SUBMISSION_RETRIES=0` for
-a zero-retry evidence run; the production default remains one known-not-started
-retry. Set
-`stop_at_score` whenever the metric has a known ceiling. A host timeout remains
-an optional emergency stop, not a default run budget.
+`sandbox=True` is the supported Linux path. `--no-sandbox` remains an explicit
+preflight opt-out. macOS agentic execution is not supported.
 
-Project spend limits can backstop API-key traffic, but they do not govern
-staged ChatGPT-login traffic and are not per-invocation USD enforcement. The
-supported v1 contract is bounded work, not an exact dollar ceiling.
+## Results
 
-The default sandbox does not expose the normal `~/.codex` login directory.
-`sandbox_runtime.py login`
-stores ChatGPT authentication in the isolated `CODEX_HOME` already mounted from
-`~/.cache`. `CODEX_API_KEY` remains the usage-based API alternative. An
-explicit `--no-sandbox` preflight is the opt-out path for hosts that
-intentionally use the normal Codex login. `OPENAI_API_KEY` remains available to
-GEPA's in-process models but is never translated into Codex authentication.
+The winning artifact and score are available on GEPA's result object as
+`best_candidate` and `best_score`. GEPA writes engine work to `run_dir` and
+evaluation records plus summaries to `output_dir`.
 
-The adapter accepts pinned GEPA's exact
-`--disallowedTools=WebFetch,WebSearch`, `--output-format json`, and
-`--permission-mode bypassPermissions` arguments. It rejects other policy
-values, unknown Claude CLI flags, and `--settings` before spawning Codex. It
-maps the web-tool denial by disabling Codex's standalone web-search feature;
-as with GEPA's unsandboxed Claude path, shell commands still have network
-access.
+Agentic state contains metadata-only invocation records under
+`CODEX_ADAPTER_STATE_DIR/invocations/` and session mappings under
+`CODEX_ADAPTER_STATE_DIR/sessions/`. It stores no prompts, responses, or
+credentials.
 
-## Verify from a source checkout
-
-```bash
-python -m pytest -q
-```
-
-Run the direct adapter smoke only when you intend to make one Codex model call:
-
-```bash
-RUN_CODEX_LIVE=1 python -m pytest -q \
-  tests/test_adapter.py::test_live_codex_round_trip
-```
-
-The release dogfood runner makes live calls from an installed plugin. Set
-`GEPA_CODEX_SKILL_DIR` to that installed skill; the runner rejects the source
-checkout, marketplace source copy, version mismatch, reused state, and missing
-plugin manifest. For release proof, first stage a ChatGPT login with
-`sandbox_runtime.py login` and leave `CODEX_API_KEY` and `OPENAI_API_KEY`
-unset. The runner caps the adapter at one invocation and exits nonzero when its
-evidence is incomplete. Run each engine separately:
-
-```bash
-RUN_CODEX_LIVE=1 python scripts/release_dogfood.py --engine autoresearch
-RUN_CODEX_LIVE=1 python scripts/release_dogfood.py --engine meta_harness
-```
-
-The matching pytest cases are also opt-in. They verify Luna with high reasoning,
-the Bubblewrap sandbox, a deterministic `RED` to `BLUE` result, positive usage
-and estimate from the adapter journal, session mapping, and the persisted
-receipt:
-
-```bash
-RUN_CODEX_LIVE=1 python -m pytest -q tests/test_live_optimize_anything.py
-```
-
-The same live test file runs installed-plugin smokes for the in-process `gepa`
-and `best_of_n` engines through the installed `CodexLM` test driver. This is
-release-test plumbing, not a public replacement for GEPA's in-process LM
-interface. All four release smokes use staged ChatGPT login,
-`gpt-5.6-luna` with high reasoning, the adapter invocation journal, and the
-same token-derived usage estimate. Neither API-key variable may be present.
-Their standalone commands are:
-
-```bash
-RUN_CODEX_LIVE=1 python scripts/release_inprocess_smoke.py --engine gepa --output-dir /tmp/gepa-smoke
-RUN_CODEX_LIVE=1 python scripts/release_inprocess_smoke.py --engine best_of_n --output-dir /tmp/best-of-n-smoke
-```
-
-The pre-v1 installed-skill dogfood exercises the user-facing skill invocation
-with a deterministic eight-case JSON routing policy and one bounded
-MetaHarness iteration:
-
-```bash
-RUN_CODEX_LIVE=1 python scripts/installed_skill_dogfood.py \
-  --output-dir /tmp/installed-skill-dogfood
-```
-
-It requires the same installed `GEPA_CODEX_SKILL_DIR` and staged ChatGPT login.
-Its receipt stores score traces, candidate hashes, usage, session mappings, and
-custody hashes, but no prompts, responses, candidate text, or credentials.
-
-Do not set `max_token_cost`. Inspect each durable runner receipt before
-starting the next engine. Outside the release runner, the adapter defaults to
-four starts per unique state directory. Set `CODEX_ADAPTER_MAX_INVOCATIONS` to
-a positive integer to override that fail-closed request-count guard.
-
-## Scope
-
-This repository contains only the Codex skill port and compatibility command.
-It does not include a benchmark, evaluator, domain prompt, article corpus, or
-optimization result. Users supply the artifact and evaluator that GEPA runs.
-
-The upstream skill is MIT licensed and pinned in
-[`UPSTREAM.md`](UPSTREAM.md).
+Release certification commands and receipt checks live in
+[`release/README.md`](release/README.md). The full optimizer API, evaluator
+guidance, data modes, tracking, composition helpers, and budget semantics live
+in the installed skill and its references. The exact upstream GEPA pin is
+recorded in [`UPSTREAM.md`](UPSTREAM.md).
