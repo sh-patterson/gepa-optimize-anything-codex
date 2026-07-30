@@ -76,8 +76,11 @@ Receipts use schema 2. Before starting the next live command, confirm:
 - SHA-256 hashes for every named runtime, fixture, journal, and session file.
 
 Receipts contain no credentials, prompts, responses, or candidate text. The
-cost field is a token-derived estimate. It is not provider billing or an exact
-USD cap.
+public copy replaces paths beneath the operator's home directory with `$HOME`
+and stores thread and session identifiers as SHA-256 values. The private
+invocation journal retains the original mapping for reconciliation. The cost
+field is a token-derived estimate. It is not provider billing or an exact USD
+cap.
 
 Certify the untagged merge commit from a fresh installed archive. Create the
 annotated tag only after all receipts pass review. Reinstall that exact tag and

@@ -27,6 +27,7 @@ if str(SCRIPT_DIR) not in sys.path:
 from release_evidence import (  # noqa: E402
     hash_files,
     installed_provenance,
+    public_receipt,
     read_adapter_evidence,
     write_verified_receipt,
 )
@@ -343,6 +344,7 @@ def run_smoke(
     }
     receipt_path = output_dir / f"{engine}-receipt.json"
     receipt["receipt_path"] = str(receipt_path)
+    receipt = public_receipt(receipt)
     write_verified_receipt(receipt_path, receipt)
     return receipt
 

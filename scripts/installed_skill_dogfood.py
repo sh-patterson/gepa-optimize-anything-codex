@@ -32,6 +32,7 @@ from release_dogfood import (  # noqa: E402
 from release_evidence import (  # noqa: E402
     hash_files,
     installed_provenance,
+    public_receipt,
     read_adapter_evidence,
     write_verified_receipt,
 )
@@ -406,7 +407,8 @@ def run_dogfood(output_dir: Path) -> dict[str, Any]:
         task=task,
     )
     receipt["duration_ms"] = round((time.monotonic() - started) * 1000)
-    receipt_path = Path(receipt["receipt_path"])
+    receipt_path = output_dir / "installed-skill-dogfood-receipt.json"
+    receipt = public_receipt(receipt)
     write_verified_receipt(receipt_path, receipt)
     return receipt
 
