@@ -33,6 +33,7 @@ if str(SCRIPT_DIR) not in sys.path:
 from release_evidence import (  # noqa: E402
     hash_files,
     installed_provenance,
+    public_receipt,
     read_adapter_evidence,
     write_verified_receipt,
 )
@@ -308,6 +309,7 @@ def _failure_receipt(
         receipt["sandbox"] = {"enabled": True, "runtime": source.get("sandbox_runtime")}
     path = root / "output" / "release_receipt.json"
     receipt["receipt_path"] = str(path)
+    receipt = public_receipt(receipt)
     write_verified_receipt(path, receipt)
     return receipt, path
 
@@ -431,6 +433,7 @@ def run_release(
         }
         path = root / "output" / "release_receipt.json"
         receipt["receipt_path"] = str(path)
+        receipt = public_receipt(receipt)
         write_verified_receipt(path, receipt)
         return receipt, path
     except (

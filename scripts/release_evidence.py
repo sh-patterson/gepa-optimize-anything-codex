@@ -19,6 +19,7 @@ __all__ = (
     "git_commit",
     "installed_vcs_commit",
     "hash_files",
+    "public_receipt",
     "write_verified_receipt",
 )
 
@@ -48,6 +49,9 @@ _REQUIRED_INVOCATION_FIELDS = frozenset(
         "cost_status",
         "duration_ms",
     }
+)
+_SESSION_IDENTIFIER_FIELDS = frozenset(
+    {"codex_thread_id", "thread_id", "upstream_session_id"}
 )
 
 
@@ -260,6 +264,38 @@ def hash_files(paths: Mapping[str, Path]) -> dict[str, str]:
                 digest.update(chunk)
         hashes[name] = digest.hexdigest()
     return hashes
+
+
+def public_receipt(
+    receipt: Mapping[str, object], *, home: Path | None = None
+) -> dict[str, object]:
+    home_path = (home or Path(os.environ.get("HOME", Path.home()))).expanduser()
+    home_prefixes = {
+        str(home_path).rstrip("/\\"),
+        home_path.as_posix().rstrip("/\\"),
+    }
+
+    def clean(value: object, key: str | None = None) -> object:
+        if key in _SESSION_IDENTIFIER_FIELDS and isinstance(value, str):
+            if value.startswith("sha256:"):
+                return value
+            return "sha256:" + hashlib.sha256(value.encode()).hexdigest()
+        if isinstance(value, dict):
+            return {name: clean(item, name) for name, item in value.items()}
+        if isinstance(value, list):
+            return [clean(item) for item in value]
+        if isinstance(value, str):
+            for prefix in home_prefixes:
+                if value == prefix:
+                    return "$HOME"
+                for separator in ("/", "\\"):
+                    boundary = prefix + separator
+                    if value.startswith(boundary):
+                        suffix = value[len(boundary) :].replace("\\", "/")
+                        return f"$HOME/{suffix}"
+        return value
+
+    return {name: clean(value, name) for name, value in receipt.items()}
 
 
 def write_verified_receipt(path: Path, receipt: dict[str, object]) -> Path:

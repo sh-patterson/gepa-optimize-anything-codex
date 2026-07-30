@@ -100,13 +100,18 @@ def test_installed_skill_path_requires_configuration(
     assert release_dogfood.installed_skill_path() == installed.resolve()
 
 
-def test_failure_receipt_is_persisted_for_timeout(tmp_path: Path) -> None:
+def test_failure_receipt_is_persisted_for_timeout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
     receipt, path = release_dogfood._failure_receipt(
         "autoresearch", tmp_path, "release run exceeded 600 seconds", "timeout"
     )
 
     assert receipt["status"] == "timeout"
-    assert json.loads(path.read_text(encoding="utf-8"))["receipt_path"] == str(path)
+    assert json.loads(path.read_text(encoding="utf-8"))["receipt_path"] == (
+        "$HOME/output/release_receipt.json"
+    )
 
 
 def test_stage_and_preflight_records_actual_staged_paths(

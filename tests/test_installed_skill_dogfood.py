@@ -215,7 +215,7 @@ def test_outer_codex_rejects_missing_usage_and_terminal_ambiguity(
 def test_fake_codex_run_writes_sanitized_hashed_receipt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("HOME", str(tmp_path))
     skill = _installed_skill(tmp_path)
     fake = tmp_path / "fake-codex"
     fake.write_text(
@@ -301,7 +301,9 @@ def test_fake_codex_run_writes_sanitized_hashed_receipt(
         "optimizer_codex": {"input_tokens": 10, "output_tokens": 2},
     }
     assert receipt["cost"]["optimizer_estimated_usd"] == pytest.approx(0.001)
-    assert receipt["terminal"]["outer"]["thread_id"] == "outer-thread"
+    assert receipt["terminal"]["outer"]["thread_id"].startswith("sha256:")
+    assert receipt["session_mapping"]["upstream_session_id"].startswith("sha256:")
+    assert receipt["session_mapping"]["codex_thread_id"].startswith("sha256:")
     assert receipt["terminal"]["optimizer"]["ambiguous_retry"] is False
     assert set(receipt["hashes"]) == {
         "plugin_manifest",
@@ -323,9 +325,13 @@ def test_fake_codex_run_writes_sanitized_hashed_receipt(
     assert "Use $gepa" not in serialized
     assert "routes" not in serialized
     assert "API_KEY" not in serialized
-    assert (
-        json.loads(Path(receipt["receipt_path"]).read_text(encoding="utf-8")) == receipt
-    )
+    assert "outer-thread" not in serialized
+    assert "inner-session" not in serialized
+    assert "inner-thread" not in serialized
+    assert str(tmp_path) not in serialized
+    assert receipt["receipt_path"] == "$HOME/output/installed-skill-dogfood-receipt.json"
+    persisted = tmp_path / "output" / "installed-skill-dogfood-receipt.json"
+    assert json.loads(persisted.read_text(encoding="utf-8")) == receipt
 
 
 def test_runner_rejects_wrong_provenance_and_retry_leakage(

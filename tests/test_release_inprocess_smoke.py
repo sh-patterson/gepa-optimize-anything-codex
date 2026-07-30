@@ -261,6 +261,7 @@ def test_cli_requires_explicit_live_authorization(
 def test_smoke_writes_sanitized_installed_receipt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, engine: str
 ) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("GEPA_CODEX_SKILL_DIR", str(_installed_skill(tmp_path)))
     monkeypatch.setattr(smoke, "read_adapter_evidence", lambda *_args, **_kwargs: _evidence())
     monkeypatch.setattr(smoke, "installed_provenance", _provenance)
@@ -283,6 +284,12 @@ def test_smoke_writes_sanitized_installed_receipt(
     assert receipt["usage"] == FULL_USAGE
     assert receipt["duration_ms"] >= 0
     assert receipt["provenance"]["installed_plugin"] is True
+    assert receipt["receipt_path"] == f"$HOME/output-{engine}/{engine}-receipt.json"
+    assert all(
+        mapping["upstream_session_id"].startswith("sha256:")
+        and mapping["codex_thread_id"].startswith("sha256:")
+        for mapping in receipt["session_mapping"]
+    )
     assert set(receipt["hashes"]) == {
         "skill",
         "plugin_manifest",
@@ -306,6 +313,7 @@ def test_smoke_writes_sanitized_installed_receipt(
         "adapter"
     ]
     assert "Return BLUE." not in json.dumps(receipt)
+    assert str(tmp_path) not in json.dumps(receipt)
     assert seen["seed_candidate"] == "Return RED."
     config = seen["config"]
     assert config.max_evals == 4

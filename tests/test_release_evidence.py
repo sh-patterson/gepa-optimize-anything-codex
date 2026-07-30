@@ -58,7 +58,7 @@ def _write_evidence(state_dir: Path, record: dict[str, object]) -> tuple[Path, P
     return invocation_path, session_path
 
 
-def test_public_contract_is_the_single_evidence_dataclass_and_six_helpers() -> None:
+def test_public_contract_is_the_single_evidence_dataclass_and_seven_helpers() -> None:
     assert evidence.__all__ == (
         "AdapterEvidence",
         "installed_provenance",
@@ -66,6 +66,7 @@ def test_public_contract_is_the_single_evidence_dataclass_and_six_helpers() -> N
         "git_commit",
         "installed_vcs_commit",
         "hash_files",
+        "public_receipt",
         "write_verified_receipt",
     )
     assert [field.name for field in fields(evidence.AdapterEvidence)] == [
@@ -115,6 +116,32 @@ def test_hashing_and_receipt_writer_preserve_the_exact_payload(tmp_path: Path) -
     assert set(evidence.hash_files({"custody": custody})) == {"custody"}
     assert evidence.write_verified_receipt(receipt_path, receipt) == receipt_path
     assert json.loads(receipt_path.read_text(encoding="utf-8")) == receipt
+
+
+def test_public_receipt_hides_home_and_session_identifiers(tmp_path: Path) -> None:
+    home = tmp_path / "home" / "operator"
+    receipt = {
+        "receipt_path": str(home / "runs" / "receipt.json"),
+        "outside_home": "/usr/local/bin/codex",
+        "session_mapping": {
+            "upstream_session_id": "upstream-session",
+            "codex_thread_id": "codex-thread",
+        },
+        "terminal": {"thread_id": "outer-thread"},
+    }
+
+    actual = evidence.public_receipt(receipt, home=home)
+
+    assert actual["receipt_path"] == "$HOME/runs/receipt.json"
+    assert actual["outside_home"] == "/usr/local/bin/codex"
+    assert actual["session_mapping"]["upstream_session_id"].startswith("sha256:")
+    assert actual["session_mapping"]["codex_thread_id"].startswith("sha256:")
+    assert actual["terminal"]["thread_id"].startswith("sha256:")
+    assert "upstream-session" not in json.dumps(actual)
+    assert "codex-thread" not in json.dumps(actual)
+    assert "outer-thread" not in json.dumps(actual)
+    assert receipt["session_mapping"]["upstream_session_id"] == "upstream-session"
+    assert evidence.public_receipt(actual, home=home) == actual
 
 
 def test_evidence_boundaries_fail_closed_for_schema_path_hash_and_reload(
