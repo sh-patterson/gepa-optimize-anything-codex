@@ -37,6 +37,7 @@ class CodexLM:
         self.total_cost = 0.0
         self.total_tokens_in = 0
         self.total_tokens_out = 0
+        self.total_usage: dict[str, int] = {}
         self.invocation_count = 0
 
     def __call__(self, prompt: str) -> str:
@@ -88,10 +89,17 @@ class CodexLM:
             raise RuntimeError("Codex adapter returned no usage")
         input_tokens = usage.get("input_tokens")
         output_tokens = usage.get("output_tokens")
-        if any(
-            isinstance(value, bool) or not isinstance(value, int) or value < 0
-            for value in (input_tokens, output_tokens)
-        ) or input_tokens + output_tokens <= 0:
+        if (
+            any(
+                isinstance(value, bool) or not isinstance(value, int) or value < 0
+                for value in usage.values()
+            )
+            or isinstance(input_tokens, bool)
+            or not isinstance(input_tokens, int)
+            or isinstance(output_tokens, bool)
+            or not isinstance(output_tokens, int)
+            or input_tokens + output_tokens <= 0
+        ):
             raise RuntimeError("Codex adapter returned invalid usage")
         estimated_cost = payload.get("total_cost_usd")
         if (
@@ -102,6 +110,8 @@ class CodexLM:
             raise RuntimeError("Codex adapter returned no cost estimate")
         self.total_tokens_in += input_tokens
         self.total_tokens_out += output_tokens
+        for name, value in usage.items():
+            self.total_usage[name] = self.total_usage.get(name, 0) + value
         self.total_cost += float(estimated_cost)
         self.invocation_count += 1
         return result

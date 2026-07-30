@@ -82,24 +82,31 @@ def _usage(metadata: object) -> dict[str, int]:
     if not isinstance(value, dict):
         raise RuntimeError("optimizer result usage is missing")
     usage: dict[str, int] = {}
-    for name in ("input_tokens", "output_tokens"):
-        token_count = value.get(name)
-        if isinstance(token_count, bool) or not isinstance(token_count, int):
-            raise RuntimeError(f"optimizer usage is missing {name}")
+    for name, token_count in value.items():
+        if (
+            isinstance(token_count, bool)
+            or not isinstance(token_count, int)
+            or token_count < 0
+        ):
+            raise RuntimeError(f"optimizer usage is invalid {name}")
         usage[name] = token_count
-    if sum(usage.values()) <= 0:
+    if (
+        not all(name in usage for name in ("input_tokens", "output_tokens"))
+        or usage["input_tokens"] + usage["output_tokens"] <= 0
+    ):
         raise RuntimeError("optimizer usage is empty")
     return usage
 
 
 def _codex_usage(lms: list[object]) -> dict[str, int]:
-    usage = {
-        "input_tokens": sum(int(getattr(lm, "total_tokens_in", 0)) for lm in lms),
-        "output_tokens": sum(int(getattr(lm, "total_tokens_out", 0)) for lm in lms),
-    }
-    if sum(usage.values()) <= 0:
-        raise RuntimeError("optimizer usage is empty")
-    return usage
+    usage: dict[str, int] = {}
+    for lm in lms:
+        lm_usage = getattr(lm, "total_usage", None)
+        if not isinstance(lm_usage, dict):
+            raise RuntimeError("optimizer usage is missing")
+        for name, value in _usage(lm_usage).items():
+            usage[name] = usage.get(name, 0) + value
+    return _usage(usage)
 
 
 def _result(result: object) -> dict[str, Any]:
@@ -315,7 +322,7 @@ def run_smoke(
             "bubblewrap_probe_success": runtime["probe_success"],
         },
         "result": result,
-        "usage": usage,
+        "usage": evidence.usage,
         "cost": {
             "estimated_usd": evidence.estimated_cost_usd,
             "status": "standard_tier_upper_estimate_from_observed_usage",

@@ -20,6 +20,14 @@ SPEC.loader.exec_module(codex_lm)
 def test_codex_lm_records_adapter_usage(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    usage = {
+        "input_tokens": 12,
+        "output_tokens": 8,
+        "cached_input_tokens": 7,
+        "cache_write_input_tokens": 0,
+        "reasoning_output_tokens": 3,
+    }
+
     def fake_run(command: list[str], **kwargs: object) -> object:
         session_id = command[command.index("--session-id") + 1]
         assert command[-1] == "improve this"
@@ -35,7 +43,7 @@ def test_codex_lm_records_adapter_usage(
                         "session_id": session_id,
                         "adapter_target_model": codex_lm.TARGET_MODEL,
                         "result": "improved",
-                        "usage": {"input_tokens": 12, "output_tokens": 8},
+                        "usage": usage,
                         "total_cost_usd": 0.001,
                     }
                 ),
@@ -54,6 +62,7 @@ def test_codex_lm_records_adapter_usage(
     assert lm.invocation_count == 1
     assert lm.total_tokens_in == 12
     assert lm.total_tokens_out == 8
+    assert lm.total_usage == usage
     assert lm.total_cost == pytest.approx(0.001)
 
 
