@@ -3,8 +3,21 @@
 These commands certify an installed marketplace artifact. They are not the
 normal user workflow.
 
-Version 1.0.2 adds the installed `CodexLM` callable for GEPA and best-of-N.
-The no-call checks below use fake processes only.
+Version 1.0.3 pins the repaired AutoResearch evaluation lifecycle while keeping
+its public support claim behind the installed live-certification gate. The
+no-call checks below use fake processes only.
+
+## Engine certification boundary
+
+`gepa` and `best_of_n` have narrow installed-plugin probe evidence.
+AutoResearch is **NOT VERIFIED** for a yielded or long-running evaluator. A
+successful outer Codex receipt cannot certify that GEPA drained its evaluation
+server, selected a completed candidate, or preserved feedback order. Do not
+certify AutoResearch from the command listed below until a later upstream GEPA pin meets the gate in
+[`UPSTREAM.md`](../UPSTREAM.md).
+
+MetaHarness has separate evidence requirements. Its command may exercise the
+runtime, but it does not establish AutoResearch or full Omni support.
 
 ## Prepare the installed artifact
 
@@ -48,7 +61,13 @@ RUN_CODEX_LIVE=1 python scripts/release_inprocess_smoke.py \
   --engine gepa --output-dir /tmp/gepa-smoke
 RUN_CODEX_LIVE=1 python scripts/release_inprocess_smoke.py \
   --engine best_of_n --output-dir /tmp/best-of-n-smoke
+```
 
+## Unverified agentic runtime exercises
+
+These commands exercise agentic runtime setup. They are not certification.
+
+```bash
 RUN_CODEX_LIVE=1 python scripts/release_dogfood.py --engine autoresearch
 RUN_CODEX_LIVE=1 python scripts/release_dogfood.py --engine meta_harness
 ```

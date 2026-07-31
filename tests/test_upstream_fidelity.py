@@ -6,9 +6,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).parents[1]
-PINNED_GEPA_COMMIT = "0310bb7b4952d4695718f9f557e450fd6781301e"
+PINNED_GEPA_COMMIT = "3a6f93c5dd0beb68825973b3b2f2cae23060bbbb"
 PINNED_GEPA_DEPENDENCY = (
-    "gepa[full] @ git+https://github.com/gepa-ai/gepa.git@"
+    "gepa[full] @ git+https://github.com/sh-patterson/gepa.git@"
     f"{PINNED_GEPA_COMMIT}"
 )
 SKILL = (
@@ -34,12 +34,12 @@ PINNED_UPSTREAM_SHA256 = {
 }
 
 REVIEWED_LOCAL_SHA256 = {
-    "SKILL.md": "0e0620520d9eeb2ff8581ed9954003e56fb2a7f0568f65b3cd6c6c175852647c",
+    "SKILL.md": "04229804353e801614a20071f1006bdb5cc865addec04c289bd6deb61b46275f",
     "references/api.md": (
         "dbea32c545a2df516ff00c3baaa3541ec6b5830a76444cbb60d8b26810d3de8c"
     ),
     "references/gotchas.md": (
-        "c5c937b67310d99497e632bf5599eefa43e7631d77ba73fdbcc7480b6e8191d7"
+        "d28c21022177e63409052cd4c34e9c1da982af7b8524c9f4f88ba29e3f87245c"
     ),
     "references/tracking.md": PINNED_UPSTREAM_SHA256["references/tracking.md"],
     "references/writing_evaluators.md": PINNED_UPSTREAM_SHA256[
@@ -97,6 +97,15 @@ def test_gepa_pin_is_consistent_across_install_paths() -> None:
     assert live_dependencies == [PINNED_GEPA_DEPENDENCY]
     assert PINNED_GEPA_COMMIT in upstream
     assert PINNED_GEPA_DEPENDENCY in skill
+
+
+def test_upstream_autoresearch_repair_gate_is_explicit() -> None:
+    upstream = (ROOT / "UPSTREAM.md").read_text(encoding="utf-8")
+
+    assert "EvalServer wait_for_idle()" in upstream
+    assert "completed evaluation receipt" in upstream
+    assert "evaluation N+1" in upstream
+    assert "Do not update the pinned commit" in upstream
 
 
 def test_upstream_copy_has_no_known_truncations() -> None:

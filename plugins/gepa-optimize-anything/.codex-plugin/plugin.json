@@ -1,6 +1,6 @@
 {
   "name": "gepa-optimize-anything",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Run GEPA Optimize Anything through Codex.",
   "author": {
     "name": "Shawn Patterson",
