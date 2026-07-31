@@ -3,8 +3,9 @@
 These commands certify an installed marketplace artifact. They are not the
 normal user workflow.
 
-Version 1.0.2 adds the installed `CodexLM` callable for GEPA and best-of-N.
-The no-call checks below use fake processes only.
+Version 1.0.3 pins the repaired AutoResearch evaluation lifecycle while keeping
+its public support claim behind the installed live-certification gate. The
+no-call checks below use fake processes only.
 
 ## Engine certification boundary
 
