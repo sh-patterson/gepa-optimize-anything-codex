@@ -446,6 +446,74 @@ def test_completed_turn_without_an_agent_message_fails_closed(tmp_path, monkeypa
     assert run.usage == {"input_tokens": 1, "output_tokens": 1}
 
 
+def test_terminal_receipt_does_not_prove_yielded_evaluator_finished(
+    tmp_path, monkeypatch
+):
+    fake_codex = tmp_path / "codex"
+    evaluator = tmp_path / "yielded-evaluator.py"
+    evaluator_started = tmp_path / "evaluator-started"
+    evaluator_release = tmp_path / "evaluator-release"
+    evaluator_finished = tmp_path / "evaluator-finished"
+    evaluator.write_text(
+        "from pathlib import Path\n"
+        "import sys\n"
+        "import time\n"
+        "started, release, finished = map(Path, sys.argv[1:])\n"
+        "started.write_text('started', encoding='utf-8')\n"
+        "while not release.exists():\n"
+        "    time.sleep(0.01)\n"
+        "finished.write_text('finished', encoding='utf-8')\n",
+        encoding="utf-8",
+    )
+    fake_codex.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json\n"
+        "import os\n"
+        "import subprocess\n"
+        "import sys\n"
+        "from pathlib import Path\n"
+        "subprocess.Popen([sys.executable, os.environ['YIELDED_EVALUATOR'], "
+        "os.environ['EVALUATOR_STARTED'], os.environ['EVALUATOR_RELEASE'], "
+        "os.environ['EVALUATOR_FINISHED']], stdout=subprocess.DEVNULL, "
+        "stderr=subprocess.DEVNULL, start_new_session=True)\n"
+        "print(json.dumps({'type': 'thread.started', 'thread_id': 'codex-thread-1'}))\n"
+        "print(json.dumps({'type': 'item.completed', 'item': {'type': "
+        "'agent_message', 'text': 'submitted evaluation'}}))\n"
+        "print(json.dumps({'type': 'turn.completed', 'usage': {'input_tokens': 1, "
+        "'output_tokens': 1}}))\n",
+        encoding="utf-8",
+    )
+    fake_codex.chmod(0o755)
+    monkeypatch.setenv("CODEX_CLI", str(fake_codex))
+    monkeypatch.setenv("CODEX_ADAPTER_STATE_DIR", str(tmp_path / "adapter-state"))
+    monkeypatch.setenv("YIELDED_EVALUATOR", str(evaluator))
+    monkeypatch.setenv("EVALUATOR_STARTED", str(evaluator_started))
+    monkeypatch.setenv("EVALUATOR_RELEASE", str(evaluator_release))
+    monkeypatch.setenv("EVALUATOR_FINISHED", str(evaluator_finished))
+    request = parse_agent_request(
+        ["--print", "--session-id", "upstream-1", "prompt"], tmp_path
+    )
+
+    try:
+        run = invoke_codex(request)
+        deadline = time.monotonic() + 3
+        while not evaluator_started.exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+
+        assert run.returncode == 0
+        assert run.terminal_status == "completed"
+        assert evaluator_started.exists()
+        assert not evaluator_finished.exists()
+        assert _invocation_record(tmp_path / "adapter-state")["terminal_status"] == "completed"
+    finally:
+        evaluator_release.write_text("release", encoding="utf-8")
+        deadline = time.monotonic() + 3
+        while not evaluator_finished.exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+
+    assert evaluator_finished.exists()
+
+
 def test_error_receipt_preserves_observed_usage_and_cost(tmp_path, monkeypatch):
     fake_codex = tmp_path / "codex"
     fake_codex.write_text(

@@ -109,12 +109,24 @@ def test_public_adapter_scope_is_explicit():
     skill = (SKILL / "SKILL.md").read_text(encoding="utf-8")
     api = (SKILL / "references" / "api.md").read_text(encoding="utf-8")
 
-    assert "public Codex adapter supports `autoresearch`" in readme
+    assert "AutoResearch is **NOT VERIFIED**" in readme
+    assert "yielded or long-running evaluator" in readme
     assert "`meta_harness`" in readme
     assert "`gepa`" in readme
     assert "`best_of_n`" in readme
     assert "in-process `gepa` and `best_of_n`" in skill
     assert "does not support macOS agentic execution" in api
+
+
+def test_engine_support_matrix_does_not_overclaim_agentic_engines():
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    runtime = (SKILL / "references" / "runtime.md").read_text(encoding="utf-8")
+    gotchas = (SKILL / "references" / "gotchas.md").read_text(encoding="utf-8")
+    release = (ROOT / "release" / "README.md").read_text(encoding="utf-8")
+
+    for document in (readme, runtime, gotchas, release):
+        assert "AutoResearch is **NOT VERIFIED**" in document
+    assert "MetaHarness has separate evidence" in readme
 
 
 def test_public_docs_keep_release_and_runtime_internals_out_of_first_run():

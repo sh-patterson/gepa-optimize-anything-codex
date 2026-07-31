@@ -99,6 +99,15 @@ def test_gepa_pin_is_consistent_across_install_paths() -> None:
     assert PINNED_GEPA_DEPENDENCY in skill
 
 
+def test_upstream_autoresearch_repair_gate_is_explicit() -> None:
+    upstream = (ROOT / "UPSTREAM.md").read_text(encoding="utf-8")
+
+    assert "EvalServer wait_for_idle()" in upstream
+    assert "completed evaluation receipt" in upstream
+    assert "evaluation N+1" in upstream
+    assert "Do not update the pinned commit" in upstream
+
+
 def test_upstream_copy_has_no_known_truncations() -> None:
     copied_text = "\n".join(
         path.read_text(encoding="utf-8") for path in SKILL.rglob("*.md")
