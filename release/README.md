@@ -53,6 +53,21 @@ python -m ruff check .
 Every command below can make a model call. Obtain fresh authorization first.
 Run them serially with zero retries.
 
+Prove the installed compatibility adapter independently before exercising any
+optimizer or evaluator:
+
+```bash
+RUN_CODEX_LIVE=1 python scripts/release_adapter_smoke.py \
+  --expected-commit "$(git rev-parse HEAD)" \
+  --output-dir /tmp/installed-adapter-smoke
+```
+
+This command makes one Luna call through the installed `claude` compatibility
+launcher. It excludes GEPA, `optimize_anything`, evaluators, judges, and the
+research-bullet harness. Do not continue unless its receipt proves exact
+installed-file provenance, terminal success, positive usage, and one session
+mapping.
+
 ```bash
 RUN_CODEX_LIVE=1 python scripts/installed_skill_dogfood.py \
   --output-dir /tmp/installed-skill-dogfood
