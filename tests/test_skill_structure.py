@@ -26,6 +26,7 @@ def test_skill_has_required_files_and_local_links():
     for name in (
         "api.md",
         "gotchas.md",
+        "omni.md",
         "runtime.md",
         "tracking.md",
         "writing_evaluators.md",
@@ -116,6 +117,24 @@ def test_public_adapter_scope_is_explicit():
     assert "`best_of_n`" in readme
     assert "in-process `gepa` and `best_of_n`" in skill
     assert "does not support macOS agentic execution" in api
+
+
+def test_paper_informed_multi_engine_contract_is_explicit():
+    skill = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+    omni = (SKILL / "references" / "omni.md").read_text(encoding="utf-8")
+
+    assert "paper-informed multi-engine method" in skill
+    assert "no engine dominated" in skill
+    assert "fresh optimizer" in skill
+    assert "one frozen evaluator" in skill
+    assert "optimize_best_of" in omni
+    assert "optimize_vote" in omni
+    assert "exact winner bytes" in omni
+    assert "fresh run, output, state, and session directories" in omni
+    assert "Make no dollar-matched claim" in omni
+    assert "Do not call a run Omni" in omni
+    assert "AutoResearch is **NOT VERIFIED**" in omni
+    assert "not as a reproduction of the published Omni method" in omni
 
 
 def test_engine_support_matrix_does_not_overclaim_agentic_engines():

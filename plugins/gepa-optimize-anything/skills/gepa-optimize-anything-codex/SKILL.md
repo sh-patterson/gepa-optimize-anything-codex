@@ -77,6 +77,13 @@ There are also **composition/pipeline helpers** that combine backends over the s
 `optimize_best_of`, `optimize_vote` (re-score each branch's best for a fair pick), and an adaptive
 scheduler that rotates backends on score plateaus — see `references/api.md`.
 
+When the best engine is not known in advance, use the paper-informed multi-engine method in
+`references/omni.md`. It turns two observed results into a run contract: no engine dominated the
+published comparison, and a fresh optimizer often improved a candidate after the first optimizer
+plateaued. Run bounded early branches against one frozen evaluator, select the best candidate,
+then seed a fresh continuation from those exact bytes. Keep the published result, the Codex
+adaptation, and the evidence required to certify a run separate.
+
 ## What can be a candidate
 A candidate is **any string your evaluator can score**. "Text in → a number out (higher is better),
 plus optional feedback" is the entire contract, which covers a wide range of artifacts:
@@ -313,5 +320,7 @@ These silently degrade *results* — skim before launching:
   LLM-as-judge scoring, multi-objective via `info["scores"]`, N>1 averaging, feedback design.
 - `references/tracking.md` — enabling wandb / mlflow experiment tracking and what gets logged.
 - `references/gotchas.md` — reward hacking, selection bias, the three modes, backend prerequisites.
+- `references/omni.md` — paper-informed early engine comparison, winner selection, fresh continuation,
+  Codex budget adaptation, and certification receipts.
 - `references/runtime.md` — Linux staging, authentication, Bubblewrap, run state, and Codex adapter limits.
 - `scripts/preflight.py` — validate credentials, proposer LM, and the staged Codex runtime before launching.
