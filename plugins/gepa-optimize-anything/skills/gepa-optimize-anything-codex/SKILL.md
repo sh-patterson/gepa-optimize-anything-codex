@@ -68,9 +68,12 @@ directory for each engine. macOS agentic execution is unsupported.
 
 The `gepa` and `best_of_n` paths have narrow probe evidence. The pinned GEPA
 commit's tests verify AutoResearch's evaluation-session drain barrier,
-receipt-derived winner, and feedback ordering. Installed AutoResearch,
-MetaHarness, and the full paper-informed composition remain pending until the
-bounded phase certifier passes against one installed artifact.
+receipt-derived winner, and feedback ordering. The public deterministic phase
+certification at commit `3a9ff30` ran installed GEPA, AutoResearch, and
+MetaHarness against one evaluator, selected the best shared score, and passed
+the exact winner bytes to a fresh AutoResearch continuation. This certifies the
+paper-informed composition boundary, not semantic quality, generalization, or
+a dollar-matched reproduction of the published Omni experiment.
 
 This makes it easy to start with one backend and benchmark others on the identical task/evaluator.
 There are also **composition/pipeline helpers** that combine backends over the same task:

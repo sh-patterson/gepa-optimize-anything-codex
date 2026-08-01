@@ -28,15 +28,17 @@ preflight, and inspect the result.
 |---|---|---|---|
 | `gepa` | In process | Installed `CodexLM` | Narrow probe verified |
 | `best_of_n` | In process | Installed `CodexLM` | Narrow probe verified |
-| `autoresearch` | Codex subprocess | Installed Codex adapter | Pinned drain/order tests pass; installed live composition pending |
-| `meta_harness` | Codex subprocess | Installed Codex adapter | Installed live composition pending |
+| `autoresearch` | Codex subprocess | Installed Codex adapter | Public deterministic phase certification passed |
+| `meta_harness` | Codex subprocess | Installed Codex adapter | Public deterministic phase certification passed |
 
 `gepa` and `best_of_n` have narrow probe receipts. The pinned GEPA commit's
 AutoResearch tests verify its evaluation-session drain barrier, receipt-derived
-winner, and feedback ordering. That deterministic upstream proof is not a live
-installed-artifact receipt. AutoResearch, MetaHarness, and the full three-engine
-paper-informed composition remain pending until the bounded phase certifier
-passes against one installed artifact.
+winner, and feedback ordering. The public deterministic phase certification at
+commit `3a9ff30` also ran GEPA, AutoResearch, and MetaHarness against one shared
+evaluator, selected the best comparable score, and seeded a fresh AutoResearch
+continuation with the exact winner bytes. This certifies the installed full three-engine
+paper-informed composition, not semantic quality, generalization, or a dollar-matched
+reproduction of the published Omni experiment.
 
 The installed `scripts/codex_lm.py` callable supplies Codex to the two
 in-process engines. It does not add a new optimizer.

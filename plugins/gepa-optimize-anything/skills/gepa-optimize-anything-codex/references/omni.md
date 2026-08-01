@@ -66,8 +66,11 @@ Do not call a run Omni unless all three required engines reached valid terminal 
 shared evaluator, the Phase 1 winner was selected from comparable scores, and a fresh continuation
 received the exact winner bytes.
 
-As of v1.0.3, the installed Codex paths for GEPA and best-of-N have narrow probe evidence, and the
-exact pinned GEPA checkout's tests verify AutoResearch's drain barrier, receipt-derived winner, and
-feedback ordering. Installed AutoResearch, MetaHarness, and the complete three-engine continuation
-remain pending until the public phase certifier passes. Until then, describe the implementation as
-paper-informed and not as a certified reproduction of the published Omni method.
+As of v1.0.3 at certification commit `3a9ff30`, the public deterministic phase certifier passed
+against one installed artifact. GEPA, AutoResearch, and MetaHarness ran equal `max_evals=10` slices
+against one evaluator; deterministic selection chose the highest shared score; and a fresh
+AutoResearch process received the exact winner bytes. Describe this as a certified paper-informed
+composition. It is not evidence of semantic quality or generalization, and equal evaluation counts
+are not a dollar-matched reproduction of the published Omni experiment.
+The pinned lifecycle tests separately retain the evaluation-session drain barrier and
+receipt-derived winner guarantees.

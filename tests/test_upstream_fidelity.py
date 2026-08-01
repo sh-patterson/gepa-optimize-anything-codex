@@ -34,7 +34,7 @@ PINNED_UPSTREAM_SHA256 = {
 }
 
 REVIEWED_LOCAL_SHA256 = {
-    "SKILL.md": "49e2f6e8eba10f2bc0b76b82680b6babd0249f7481cfea85e1c941148bbaf3a1",
+    "SKILL.md": "aa08541af1d8e97f34052ce48a74e892105f4909f9f82ded103073577b991063",
     "references/api.md": (
         "dbea32c545a2df516ff00c3baaa3541ec6b5830a76444cbb60d8b26810d3de8c"
     ),

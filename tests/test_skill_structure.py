@@ -115,7 +115,7 @@ def test_public_adapter_scope_is_explicit():
     api = (SKILL / "references" / "api.md").read_text(encoding="utf-8")
 
     assert "evaluation-session drain barrier" in readme
-    assert "installed live composition pending" in readme
+    assert "Public deterministic phase certification passed" in readme
     assert "`meta_harness`" in readme
     assert "`gepa`" in readme
     assert "`best_of_n`" in readme
@@ -138,7 +138,7 @@ def test_paper_informed_multi_engine_contract_is_explicit():
     assert "Make no dollar-matched claim" in omni
     assert "Do not call a run Omni" in omni
     assert "receipt-derived winner" in omni
-    assert "not as a certified reproduction of the published Omni method" in omni
+    assert "not evidence of semantic quality or generalization" in omni
 
 
 def test_engine_support_matrix_separates_pinned_and_installed_evidence():
