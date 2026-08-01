@@ -3,17 +3,20 @@
 These commands certify an installed marketplace artifact. They are not the
 normal user workflow.
 
-Version 1.0.3 pins the repaired AutoResearch evaluation lifecycle while keeping
-its public support claim behind the installed live-certification gate. The
-no-call checks below use fake processes only.
+Version 1.0.3 introduced the repaired AutoResearch evaluation lifecycle. The
+post-tag public deterministic certification at runtime commit `3a9ff30` closed
+the installed paper-informed composition gate on `main`. The no-call checks
+below use fake processes only; the recorded live receipt remains the evidence
+for the bounded composition claim.
 
 ## Engine certification boundary
 
 `gepa` and `best_of_n` have narrow installed-plugin probe evidence. The pinned
 GEPA commit's focused tests verify AutoResearch's drain barrier,
-receipt-derived winner, and feedback ordering. Installed AutoResearch,
-MetaHarness, and their paper-informed composition still require the bounded
-four-stage live certifier below.
+receipt-derived winner, and feedback ordering. The bounded four-stage live
+certifier also passed for installed GEPA, AutoResearch, MetaHarness, and the
+fresh exact-winner continuation. This is orchestration evidence, not semantic
+quality or generalization evidence.
 
 ## Prepare the installed artifact
 
