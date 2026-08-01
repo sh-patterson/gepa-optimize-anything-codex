@@ -37,6 +37,7 @@ def _installed_skill(tmp_path: Path) -> Path:
     scripts = skill / "scripts"
     scripts.mkdir()
     (scripts / "codex_claude_adapter.py").write_text("# adapter\n", encoding="utf-8")
+    (scripts / "codex_lm.py").write_text("# public adapter\n", encoding="utf-8")
     (scripts / "claude").write_text("# launcher\n", encoding="utf-8")
     return skill
 
@@ -114,8 +115,7 @@ def test_runner_injects_codex_driver_into_inprocess_engines(
     instances: list[object] = []
 
     class FakeCodexLM:
-        def __init__(self, model: str, **_kwargs: object) -> None:
-            assert model == smoke.MODEL
+        def __init__(self, _config: object, **_kwargs: object) -> None:
             self.total_tokens_in = 10
             self.total_tokens_out = 2
             self.total_usage = {
@@ -135,7 +135,7 @@ def test_runner_injects_codex_driver_into_inprocess_engines(
             return "```\nReturn BLUE.\n```" if engine == "best_of_n" else "Return BLUE."
 
     runtime = {
-        "driver": FakeCodexLM,
+        "driver": type("Driver", (), {"CodexLMConfig": staticmethod(lambda **values: values), "CodexLM": FakeCodexLM}),
         "launcher": tmp_path / "claude",
         "environment": {},
         "state_dir": tmp_path / "state",
@@ -169,7 +169,7 @@ def test_codex_runtime_rejects_api_keys_before_staging(
         smoke._prepare_codex_runtime(tmp_path / "skill", tmp_path / "work")
 
 
-def test_codex_runtime_loads_repository_driver_and_installed_adapter(
+def test_codex_runtime_loads_installed_driver_and_adapter(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     skill = _installed_skill(tmp_path)
@@ -208,7 +208,7 @@ def test_codex_runtime_loads_repository_driver_and_installed_adapter(
         loaded_paths.append(path)
         if path == skill / "scripts" / "sandbox_runtime.py":
             return Runtime()
-        assert path == ROOT / "scripts" / "release_codex_lm.py"
+        assert path == skill / "scripts" / "codex_lm.py"
         return type("Driver", (), {"CodexLM": object})()
 
     monkeypatch.setattr(smoke, "_load_script", fake_load)
@@ -217,7 +217,7 @@ def test_codex_runtime_loads_repository_driver_and_installed_adapter(
 
     assert loaded_paths == [
         skill / "scripts" / "sandbox_runtime.py",
-        ROOT / "scripts" / "release_codex_lm.py",
+        skill / "scripts" / "codex_lm.py",
     ]
     assert runtime["adapter"] == installed_adapter
 
@@ -230,15 +230,13 @@ def test_smoke_requires_installed_plugin(
         smoke.run_smoke("gepa", tmp_path / "output")
 
 
-def test_smoke_rejects_installed_legacy_codex_driver(
+def test_smoke_requires_the_installed_public_codex_driver(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     skill = _installed_skill(tmp_path)
-    (skill / "scripts" / "codex_lm.py").write_text("# legacy\n", encoding="utf-8")
-    monkeypatch.setenv("GEPA_CODEX_SKILL_DIR", str(skill))
-
-    with pytest.raises(RuntimeError, match="must not contain codex_lm.py"):
-        smoke.run_smoke("gepa", tmp_path / "output")
+    (skill / "scripts" / "codex_lm.py").unlink()
+    with pytest.raises(FileNotFoundError):
+        smoke._load_script(skill / "scripts" / "codex_lm.py", "missing_public_driver")
 
 
 def test_cli_requires_explicit_live_authorization(
@@ -294,12 +292,9 @@ def test_smoke_writes_sanitized_installed_receipt(
         "skill",
         "plugin_manifest",
         "runner",
-        "release_codex_lm",
+        "codex_lm",
         "adapter",
     }
-    assert receipt["hashes"]["release_codex_lm"] == smoke.hash_files(
-        {"release_codex_lm": ROOT / "scripts" / "release_codex_lm.py"}
-    )["release_codex_lm"]
     adapter = (
         tmp_path
         / "installed"
@@ -309,6 +304,9 @@ def test_smoke_writes_sanitized_installed_receipt(
         / "scripts"
         / "codex_claude_adapter.py"
     )
+    assert receipt["hashes"]["codex_lm"] == smoke.hash_files(
+        {"codex_lm": adapter.parent / "codex_lm.py"}
+    )["codex_lm"]
     assert receipt["hashes"]["adapter"] == smoke.hash_files({"adapter": adapter})[
         "adapter"
     ]

@@ -609,6 +609,7 @@ def result_payload(request: AgentRequest, run: CodexRun) -> dict[str, Any]:
         "num_turns": 1,
         "usage": run.usage,
         "result": run.final_message,
+        "codex_thread_id": run.thread_id,
         "adapter_source_model": request.source_model,
         "adapter_target_model": request.target_model,
         "adapter_cost_status": (

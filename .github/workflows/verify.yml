@@ -50,8 +50,8 @@ jobs:
           test "$(jq -r '.marketplaceName' "$CLEAN_ROOT/marketplace-add.json")" = "gepa-optimize-anything-codex"
           INSTALLED_PLUGIN="$(jq -er '.installedPath' "$CLEAN_ROOT/plugin-add.json")"
           test "$(jq -r '.name' "$CLEAN_ROOT/plugin-add.json")" = "gepa-optimize-anything"
-          test "$(jq -r '.version' "$CLEAN_ROOT/plugin-add.json")" = "1.0.1"
-          jq -e 'any(.installed[]; .name == "gepa-optimize-anything" and .installed == true and .enabled == true and .version == "1.0.1")' "$CLEAN_ROOT/plugin-list.json" > /dev/null
+          test "$(jq -r '.version' "$CLEAN_ROOT/plugin-add.json")" = "1.0.3"
+          jq -e 'any(.installed[]; .name == "gepa-optimize-anything" and .installed == true and .enabled == true and .version == "1.0.3")' "$CLEAN_ROOT/plugin-list.json" > /dev/null
           INSTALLED_PLUGIN="$(readlink -f "$INSTALLED_PLUGIN")"
           INSTALLED_SKILL="$INSTALLED_PLUGIN/skills/gepa-optimize-anything-codex"
           test -f "$INSTALLED_PLUGIN/.codex-plugin/plugin.json"
