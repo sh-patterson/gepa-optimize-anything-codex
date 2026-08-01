@@ -58,7 +58,7 @@ def _write_evidence(state_dir: Path, record: dict[str, object]) -> tuple[Path, P
     return invocation_path, session_path
 
 
-def test_public_contract_is_the_single_evidence_dataclass_and_seven_helpers() -> None:
+def test_public_contract_is_the_single_evidence_dataclass_and_eight_helpers() -> None:
     assert evidence.__all__ == (
         "AdapterEvidence",
         "installed_provenance",
@@ -67,6 +67,7 @@ def test_public_contract_is_the_single_evidence_dataclass_and_seven_helpers() ->
         "installed_vcs_commit",
         "hash_files",
         "public_receipt",
+        "write_verified_bytes",
         "write_verified_receipt",
     )
     assert [field.name for field in fields(evidence.AdapterEvidence)] == [
@@ -116,6 +117,10 @@ def test_hashing_and_receipt_writer_preserve_the_exact_payload(tmp_path: Path) -
     assert set(evidence.hash_files({"custody": custody})) == {"custody"}
     assert evidence.write_verified_receipt(receipt_path, receipt) == receipt_path
     assert json.loads(receipt_path.read_text(encoding="utf-8")) == receipt
+
+    byte_path = tmp_path / "output" / "candidate.bin"
+    assert evidence.write_verified_bytes(byte_path, b"Return BLUE.") == byte_path
+    assert byte_path.read_bytes() == b"Return BLUE."
 
 
 def test_public_receipt_hides_home_and_session_identifiers(tmp_path: Path) -> None:

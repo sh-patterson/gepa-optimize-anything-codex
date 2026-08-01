@@ -110,8 +110,8 @@ def test_public_adapter_scope_is_explicit():
     skill = (SKILL / "SKILL.md").read_text(encoding="utf-8")
     api = (SKILL / "references" / "api.md").read_text(encoding="utf-8")
 
-    assert "AutoResearch is **NOT VERIFIED**" in readme
-    assert "yielded or long-running evaluator" in readme
+    assert "evaluation-session drain barrier" in readme
+    assert "installed live composition pending" in readme
     assert "`meta_harness`" in readme
     assert "`gepa`" in readme
     assert "`best_of_n`" in readme
@@ -133,19 +133,20 @@ def test_paper_informed_multi_engine_contract_is_explicit():
     assert "fresh run, output, state, and session directories" in omni
     assert "Make no dollar-matched claim" in omni
     assert "Do not call a run Omni" in omni
-    assert "AutoResearch is **NOT VERIFIED**" in omni
-    assert "not as a reproduction of the published Omni method" in omni
+    assert "receipt-derived winner" in omni
+    assert "not as a certified reproduction of the published Omni method" in omni
 
 
-def test_engine_support_matrix_does_not_overclaim_agentic_engines():
+def test_engine_support_matrix_separates_pinned_and_installed_evidence():
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     runtime = (SKILL / "references" / "runtime.md").read_text(encoding="utf-8")
     gotchas = (SKILL / "references" / "gotchas.md").read_text(encoding="utf-8")
     release = (ROOT / "release" / "README.md").read_text(encoding="utf-8")
 
     for document in (readme, runtime, gotchas, release):
-        assert "AutoResearch is **NOT VERIFIED**" in document
-    assert "MetaHarness has separate evidence" in readme
+        assert "receipt-derived" in document
+        assert "winner" in document
+    assert "full three-engine" in readme
 
 
 def test_public_docs_keep_release_and_runtime_internals_out_of_first_run():

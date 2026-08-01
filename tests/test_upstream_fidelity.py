@@ -34,12 +34,12 @@ PINNED_UPSTREAM_SHA256 = {
 }
 
 REVIEWED_LOCAL_SHA256 = {
-    "SKILL.md": "05b12d64555b9e3a399bafe5936599bba803765fb556dbe12343b7ba1196f0ec",
+    "SKILL.md": "49e2f6e8eba10f2bc0b76b82680b6babd0249f7481cfea85e1c941148bbaf3a1",
     "references/api.md": (
         "dbea32c545a2df516ff00c3baaa3541ec6b5830a76444cbb60d8b26810d3de8c"
     ),
     "references/gotchas.md": (
-        "d28c21022177e63409052cd4c34e9c1da982af7b8524c9f4f88ba29e3f87245c"
+        "50f5d15347d9ed531c0f332c540a44279286b6aa433df34be624d200086c4daf"
     ),
     "references/tracking.md": PINNED_UPSTREAM_SHA256["references/tracking.md"],
     "references/writing_evaluators.md": PINNED_UPSTREAM_SHA256[
@@ -102,10 +102,10 @@ def test_gepa_pin_is_consistent_across_install_paths() -> None:
 def test_upstream_autoresearch_repair_gate_is_explicit() -> None:
     upstream = (ROOT / "UPSTREAM.md").read_text(encoding="utf-8")
 
-    assert "EvalServer wait_for_idle()" in upstream
-    assert "completed evaluation receipt" in upstream
-    assert "evaluation N+1" in upstream
-    assert "Do not update the pinned commit" in upstream
+    assert "evaluation-session drain barrier" in upstream
+    assert "completed evaluation receipts" in upstream
+    assert "proposal N+1" in upstream
+    assert PINNED_GEPA_COMMIT in upstream
 
 
 def test_upstream_copy_has_no_known_truncations() -> None:

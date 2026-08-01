@@ -28,15 +28,15 @@ preflight, and inspect the result.
 |---|---|---|---|
 | `gepa` | In process | Installed `CodexLM` | Narrow probe verified |
 | `best_of_n` | In process | Installed `CodexLM` | Narrow probe verified |
-| `autoresearch` | Codex subprocess | Installed Codex adapter | Not verified for yielded or long-running evaluators |
-| `meta_harness` | Codex subprocess | Installed Codex adapter | Separate evidence required |
+| `autoresearch` | Codex subprocess | Installed Codex adapter | Pinned drain/order tests pass; installed live composition pending |
+| `meta_harness` | Codex subprocess | Installed Codex adapter | Installed live composition pending |
 
-`gepa` and `best_of_n` have narrow probe receipts. AutoResearch is **NOT VERIFIED**
-for a yielded or long-running evaluator. A completed adapter receipt proves only
-that the outer Codex turn completed. It does not prove that GEPA's
-evaluation server drained, promoted a completed candidate, or waited for
-feedback before another proposal. MetaHarness has separate evidence
-requirements and remains unverified until its own bounded probe passes.
+`gepa` and `best_of_n` have narrow probe receipts. The pinned GEPA commit's
+AutoResearch tests verify its evaluation-session drain barrier, receipt-derived
+winner, and feedback ordering. That deterministic upstream proof is not a live
+installed-artifact receipt. AutoResearch, MetaHarness, and the full three-engine
+paper-informed composition remain pending until the bounded phase certifier
+passes against one installed artifact.
 
 The installed `scripts/codex_lm.py` callable supplies Codex to the two
 in-process engines. It does not add a new optimizer.

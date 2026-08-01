@@ -87,8 +87,8 @@ def test_config_is_bounded_and_uses_codex_model(tmp_path: Path) -> None:
     gepa_config = smoke.config_for("gepa", tmp_path)
     best_config = smoke.config_for("best_of_n", tmp_path)
 
-    assert gepa_config["max_evals"] == 4
-    assert gepa_config["stop_at_score"] == 1.0
+    assert gepa_config["max_evals"] == 10
+    assert gepa_config["stop_at_score"] is None
     assert gepa_config["engine_config"]["reflection"]["reflection_lm"] == smoke.MODEL
     assert gepa_config["engine_config"]["reflection"]["reflection_lm_kwargs"] == {}
     assert best_config["engine_config"] == {
@@ -144,7 +144,7 @@ def test_runner_injects_codex_driver_into_inprocess_engines(
     }
 
     result, usage, lms = smoke._run_codex(
-        engine, smoke.config_for(engine, tmp_path), runtime
+        engine, smoke.config_for(engine, tmp_path), runtime, smoke.SEED
     )
 
     assert result.best_candidate == "Return BLUE."
@@ -294,6 +294,7 @@ def test_smoke_writes_sanitized_installed_receipt(
         "runner",
         "codex_lm",
         "adapter",
+        "contract",
     }
     adapter = (
         tmp_path
@@ -314,8 +315,8 @@ def test_smoke_writes_sanitized_installed_receipt(
     assert str(tmp_path) not in json.dumps(receipt)
     assert seen["seed_candidate"] == "Return RED."
     config = seen["config"]
-    assert config.max_evals == 4
-    assert config.stop_at_score == 1.0
+    assert config.max_evals == 10
+    assert config.stop_at_score is None
 
 
 def test_smoke_rejects_mismatched_returned_usage(

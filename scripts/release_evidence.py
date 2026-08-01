@@ -20,6 +20,7 @@ __all__ = (
     "installed_vcs_commit",
     "hash_files",
     "public_receipt",
+    "write_verified_bytes",
     "write_verified_receipt",
 )
 
@@ -320,4 +321,27 @@ def write_verified_receipt(path: Path, receipt: dict[str, object]) -> Path:
         raise
     if json.loads(path.read_text(encoding="utf-8")) != receipt:
         raise RuntimeError("persisted receipt does not match the completed run")
+    return path
+
+
+def write_verified_bytes(path: Path, content: bytes) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            dir=path.parent,
+            prefix=f".{path.stem}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temporary:
+            temporary_path = Path(temporary.name)
+            temporary.write(content)
+        os.replace(temporary_path, path)
+    except OSError:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+        raise
+    if path.read_bytes() != content:
+        raise RuntimeError("persisted bytes do not match the completed write")
     return path

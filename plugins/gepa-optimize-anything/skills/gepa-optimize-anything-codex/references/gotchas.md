@@ -103,19 +103,17 @@ your evaluator stops the whole optimization. Either catch failures yourself and 
 `engine_config={"engine": {"raise_on_exception": False}}` to have them auto-converted to score
 `0.0` with `info["error"]`.
 
-## 11. AutoResearch can finish its Codex turn before a yielded evaluator finishes
+## 11. An outer AutoResearch turn is not an evaluation receipt
 
-AutoResearch is **NOT VERIFIED** for a yielded or long-running evaluator. The
-Codex adapter can record a valid `turn.completed` event after the outer process
-exits while a child `eval.sh` process is still waiting on GEPA's evaluation
-server. That terminal receipt does not prove a completed evaluation, candidate
-promotion, or causal feedback ordering. Do not treat it as release evidence.
+The pinned GEPA commit now provides an evaluation-session drain barrier,
+receipt-derived winner selection, and an ordering test that blocks proposal N+1
+until evaluation N feedback completes. Those tests repair the lifecycle defect;
+they do not make an outer `turn.completed` record sufficient release evidence.
 
-Use `gepa` or `best_of_n` when their narrow probe assumptions fit the work. Run
-MetaHarness only under its separate bounded evidence gate. Use AutoResearch only
-after an upstream GEPA pin provides evaluation-server drain, receipt-derived
-winner selection, and an ordering test that blocks proposal N+1 until evaluation
-N feedback is complete.
+For an installed claim, reconcile the adapter journal, evaluation receipt,
+candidate hash, and session mapping. For the paper-informed multi-engine claim,
+also require all three Phase 1 branches and the exact-winner fresh continuation
+receipt.
 
 ## Quick pre-flight checklist
 - [ ] mode matches intent (single-task / multi-task / generalization) via `dataset`/`valset`

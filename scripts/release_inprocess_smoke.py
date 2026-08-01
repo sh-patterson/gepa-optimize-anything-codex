@@ -14,11 +14,7 @@ from uuid import uuid4
 
 
 ENGINES = frozenset({"gepa", "best_of_n"})
-MODEL = "gpt-5.6-luna"
-REASONING_EFFORT = "high"
-MAX_ADAPTER_INVOCATIONS = 4
-SEED = "Return RED."
-TARGET = "Return BLUE."
+MAX_ADAPTER_INVOCATIONS = 1
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
@@ -29,7 +25,21 @@ from release_evidence import (  # noqa: E402
     installed_provenance,
     public_receipt,
     read_adapter_evidence,
+    write_verified_bytes,
     write_verified_receipt,
+)
+from release_omni_contract import (  # noqa: E402
+    BACKGROUND,
+    DATASET,
+    MAX_EVALS,
+    MODEL,
+    OBJECTIVE,
+    REASONING_EFFORT,
+    SEED_CANDIDATE as SEED,
+    STOP_AT_SCORE,
+    TARGET_TOKEN,
+    contract_sha256,
+    evaluate as _evaluate,
 )
 
 
@@ -43,11 +53,6 @@ def installed_skill_path() -> Path:
 def _project_version() -> str:
     with (REPOSITORY_ROOT / "pyproject.toml").open("rb") as source:
         return str(tomllib.load(source)["project"]["version"])
-
-
-def _evaluate(candidate: str, _example: object = None) -> tuple[float, dict[str, str]]:
-    passed = TARGET in candidate
-    return float(passed), {"feedback": "Candidate must contain BLUE."}
 
 
 def config_for(engine: str, root: Path) -> dict[str, Any]:
@@ -64,12 +69,12 @@ def config_for(engine: str, root: Path) -> dict[str, Any]:
                 "reflection_lm": MODEL,
                 "reflection_lm_kwargs": {},
             },
-            "engine": {},
+            "engine": {"max_candidate_proposals": 1},
         }
     return {
         "engine": engine,
-        "max_evals": 4,
-        "stop_at_score": 1.0,
+        "max_evals": MAX_EVALS,
+        "stop_at_score": STOP_AT_SCORE,
         "run_dir": str(root / "run"),
         "output_dir": str(root / "output"),
         "engine_config": engine_config,
@@ -118,7 +123,8 @@ def _result(result: object) -> dict[str, Any]:
     score = getattr(result, "best_score")
     evals = getattr(result, "total_evals")
     if (
-        candidate != TARGET
+        not isinstance(candidate, str)
+        or TARGET_TOKEN not in candidate
         or not isinstance(score, (int, float))
         or score != 1.0
         or isinstance(evals, bool)
@@ -155,13 +161,7 @@ def _prepare_codex_runtime(skill: Path, work_dir: Path) -> dict[str, Any]:
         skill / "scripts" / "codex_lm.py",
         f"release_inprocess_driver_{uuid4().hex}",
     )
-    state_dir = (
-        Path.home()
-        / ".cache"
-        / "gepa-optimize-anything-codex"
-        / "runs"
-        / f"release-inprocess-{uuid4().hex}"
-    )
+    state_dir = work_dir / "adapter-state"
     paths = runtime.stage_runtime(runtime.runtime_paths())
     state_dir = runtime.resolve_state_dir(paths, state_dir)
     probe = runtime.probe_runtime(paths, state_dir)
@@ -189,7 +189,10 @@ def _prepare_codex_runtime(skill: Path, work_dir: Path) -> dict[str, Any]:
 
 
 def _run_codex(
-    engine: str, values: dict[str, Any], runtime: dict[str, Any]
+    engine: str,
+    values: dict[str, Any],
+    runtime: dict[str, Any],
+    seed_candidate: str,
 ) -> tuple[object, dict[str, int], list[object]]:
     from gepa.optimize_anything import OptimizeAnythingConfig, optimize_anything
 
@@ -226,9 +229,11 @@ def _run_codex(
         reflection["reflection_lm"] = lm
         reflection.pop("reflection_lm_kwargs")
         raw = optimize_anything(
-            seed_candidate=SEED,
+            seed_candidate=seed_candidate,
             evaluator=_evaluate,
-            objective="Write a candidate containing BLUE.",
+            dataset=list(DATASET),
+            objective=OBJECTIVE,
+            background=BACKGROUND,
             config=OptimizeAnythingConfig(**values),
         )
     else:
@@ -238,9 +243,11 @@ def _run_codex(
         best_of_n.LM = new_lm
         try:
             raw = optimize_anything(
-                seed_candidate=SEED,
+                seed_candidate=seed_candidate,
                 evaluator=_evaluate,
-                objective="Write a candidate containing BLUE.",
+                dataset=list(DATASET),
+                objective=OBJECTIVE,
+                background=BACKGROUND,
                 config=OptimizeAnythingConfig(**values),
             )
         finally:
@@ -254,6 +261,8 @@ def run_smoke(
     output_dir: Path,
     *,
     optimize: Callable[..., Any] | None = None,
+    seed_candidate: str = SEED,
+    candidate_out: Path | None = None,
 ) -> dict[str, Any]:
     skill = installed_skill_path()
     provenance = installed_provenance(skill, REPOSITORY_ROOT, _project_version())
@@ -263,7 +272,7 @@ def run_smoke(
     values = config_for(engine, output_dir)
     if optimize is None:
         runtime = _prepare_codex_runtime(skill, output_dir)
-        raw, usage, lms = _run_codex(engine, values, runtime)
+        raw, usage, lms = _run_codex(engine, values, runtime, seed_candidate)
         expected_invocations = sum(
             int(getattr(lm, "invocation_count", 0)) for lm in lms
         )
@@ -272,9 +281,11 @@ def run_smoke(
         from gepa.optimize_anything import OptimizeAnythingConfig
 
         raw = optimize(
-            seed_candidate=SEED,
+            seed_candidate=seed_candidate,
             evaluator=_evaluate,
-            objective="Write a candidate containing BLUE.",
+            dataset=list(DATASET),
+            objective=OBJECTIVE,
+            background=BACKGROUND,
             config=OptimizeAnythingConfig(**values),
         )
         usage = _usage(getattr(raw, "metadata", None))
@@ -297,6 +308,11 @@ def run_smoke(
     if abs(driver_cost - evidence.estimated_cost_usd) > 1e-9:
         raise RuntimeError("adapter journal cost estimate is inconsistent")
     result = _result(raw)
+    candidate = getattr(raw, "best_candidate")
+    if candidate_out is not None:
+        if candidate_out.exists():
+            raise RuntimeError("candidate output already exists")
+        write_verified_bytes(candidate_out, candidate.encode("utf-8"))
     duration_ms = round((time.monotonic() - started) * 1000)
     source_files = {
         "skill": skill / "SKILL.md",
@@ -304,6 +320,7 @@ def run_smoke(
         "runner": Path(__file__).resolve(),
         "codex_lm": skill / "scripts" / "codex_lm.py",
         "adapter": runtime["adapter"],
+        "contract": SCRIPT_DIR / "release_omni_contract.py",
         **{
             f"invocation_{index}": path
             for index, path in enumerate(evidence.invocation_paths, start=1)
@@ -324,8 +341,9 @@ def run_smoke(
             "reasoning_effort": REASONING_EFFORT,
             "max_adapter_invocations": MAX_ADAPTER_INVOCATIONS,
             "pre_submission_retries": 0,
-            "max_evals": 4,
+            "max_evals": MAX_EVALS,
             "max_n": 3 if engine == "best_of_n" else None,
+            "max_candidate_proposals": 1 if engine == "gepa" else None,
         },
         "authentication": {
             "mode": "chatgpt_login",
@@ -336,6 +354,10 @@ def run_smoke(
             "bubblewrap_probe_success": runtime["probe_success"],
         },
         "result": result,
+        "contract_sha256": contract_sha256(),
+        "seed_candidate_sha256": hashlib.sha256(
+            seed_candidate.encode("utf-8")
+        ).hexdigest(),
         "usage": evidence.usage,
         "cost": {
             "estimated_usd": evidence.estimated_cost_usd,
@@ -366,11 +388,26 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--engine", choices=sorted(ENGINES), required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--seed-file", type=Path)
+    parser.add_argument("--candidate-out", type=Path)
     args = parser.parse_args(argv)
     if os.environ.get("RUN_CODEX_LIVE") != "1":
         print("in-process smoke requires RUN_CODEX_LIVE=1", file=sys.stderr)
         return 2
-    print(json.dumps(run_smoke(args.engine, args.output_dir), sort_keys=True))
+    seed_candidate = (
+        args.seed_file.read_text(encoding="utf-8") if args.seed_file else SEED
+    )
+    print(
+        json.dumps(
+            run_smoke(
+                args.engine,
+                args.output_dir,
+                seed_candidate=seed_candidate,
+                candidate_out=args.candidate_out,
+            ),
+            sort_keys=True,
+        )
+    )
     return 0
 
 

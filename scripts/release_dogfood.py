@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.metadata
 import importlib.util
 import json
@@ -19,10 +20,6 @@ from typing import Any, Callable
 
 ENGINES = frozenset({"autoresearch", "meta_harness"})
 HOST_TIMEOUT_SECONDS = 600
-SEED_CANDIDATE = "Return RED."
-TARGET_TOKEN = "BLUE"
-TARGET_MODEL = "gpt-5.6-luna"
-REASONING_EFFORT = "high"
 MAX_ADAPTER_INVOCATIONS = 1
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 API_KEY_NAMES = ("CODEX_API_KEY", "OPENAI_API_KEY")
@@ -35,7 +32,21 @@ from release_evidence import (  # noqa: E402
     installed_provenance,
     public_receipt,
     read_adapter_evidence,
+    write_verified_bytes,
     write_verified_receipt,
+)
+from release_omni_contract import (  # noqa: E402
+    BACKGROUND,
+    DATASET,
+    MAX_EVALS,
+    MODEL as TARGET_MODEL,
+    OBJECTIVE,
+    REASONING_EFFORT,
+    SEED_CANDIDATE,
+    STOP_AT_SCORE,
+    TARGET_TOKEN,
+    contract_sha256,
+    evaluate as _evaluate,
 )
 
 
@@ -55,8 +66,8 @@ def release_config(engine: str, root: Path) -> dict[str, Any]:
     return {
         "engine": engine,
         "name": f"release-dogfood-{engine}-{root.name}",
-        "max_evals": 3,
-        "stop_at_score": 1.0,
+        "max_evals": MAX_EVALS,
+        "stop_at_score": STOP_AT_SCORE,
         "sandbox": True,
         "run_dir": str(root / "run"),
         "output_dir": str(root / "output"),
@@ -70,8 +81,8 @@ def release_policy(engine: str) -> dict[str, Any]:
         "target_model": TARGET_MODEL,
         "reasoning_effort": REASONING_EFFORT,
         "sandbox": True,
-        "max_evals": 3,
-        "stop_at_score": 1.0,
+        "max_evals": MAX_EVALS,
+        "stop_at_score": STOP_AT_SCORE,
         "host_timeout_seconds": HOST_TIMEOUT_SECONDS,
         "max_adapter_invocations": MAX_ADAPTER_INVOCATIONS,
         "retry_count": 0,
@@ -114,7 +125,7 @@ def require_unique_state_dir(state_dir: Path) -> None:
     state_dir.mkdir(parents=True, exist_ok=True)
 
 
-def _result_summary(result: object) -> dict[str, Any]:
+def _result_summary(result: object, seed_candidate: str) -> dict[str, Any]:
     for name in ("best_candidate", "best_score", "total_evals", "metadata"):
         if not hasattr(result, name):
             raise ValueError(f"GEPA result is missing {name}")
@@ -127,7 +138,7 @@ def _result_summary(result: object) -> dict[str, Any]:
         raise ValueError("GEPA result has invalid best score")
     _nonnegative_integer(total_evals, "total_evals")
     return {
-        "seed_candidate": SEED_CANDIDATE,
+        "seed_candidate": seed_candidate,
         "best_candidate": best_candidate,
         "best_score": float(best_score),
         "total_evals": total_evals,
@@ -210,16 +221,11 @@ def stage_and_preflight(
     return environment, evidence
 
 
-def _evaluate(candidate: str, _example: object) -> tuple[float, dict[str, Any]]:
-    passed = TARGET_TOKEN in candidate
-    return float(passed), {
-        "passed": passed,
-        "feedback": "Candidate must contain BLUE." if not passed else "Passed.",
-    }
-
-
 def _optimization_child(
-    config_values: dict[str, Any], result_path: str, environment: dict[str, str]
+    config_values: dict[str, Any],
+    result_path: str,
+    environment: dict[str, str],
+    seed_candidate: str,
 ) -> None:
     os.setsid()
     os.environ.update(environment)
@@ -227,15 +233,16 @@ def _optimization_child(
         from gepa.optimize_anything import OptimizeAnythingConfig, optimize_anything
 
         raw = optimize_anything(
-            seed_candidate=SEED_CANDIDATE,
+            seed_candidate=seed_candidate,
             evaluator=_evaluate,
-            dataset=[{"case": "exact-token"}],
-            objective="Write a candidate containing BLUE.",
-            background="The candidate must satisfy the deterministic evaluator.",
+            dataset=list(DATASET),
+            objective=OBJECTIVE,
+            background=BACKGROUND,
             config=OptimizeAnythingConfig(**config_values),
         )
         _atomic_json(
-            Path(result_path), {"status": "success", "result": _result_summary(raw)}
+            Path(result_path),
+            {"status": "success", "result": _result_summary(raw, seed_candidate)},
         )
     except BaseException as exc:
         _atomic_json(
@@ -286,7 +293,7 @@ def _valid_result(result: dict[str, Any]) -> None:
         raise ValueError("best candidate does not contain BLUE")
     if result["best_score"] != 1.0:
         raise ValueError("best score is not 1.0")
-    if not 2 <= result["total_evals"] <= 3:
+    if not 1 <= result["total_evals"] <= MAX_EVALS:
         raise ValueError("total evals are outside release bounds")
 
 
@@ -315,9 +322,16 @@ def _failure_receipt(
 
 
 def run_release(
-    engine: str, base_dir: Path | None = None
+    engine: str,
+    root: Path | None = None,
+    *,
+    seed_candidate: str = SEED_CANDIDATE,
+    candidate_out: Path | None = None,
 ) -> tuple[dict[str, Any], Path]:
-    root, state_dir = _new_paths(base_dir)
+    if root is None:
+        root, state_dir = _new_paths(None)
+    else:
+        state_dir = root / "adapter-state"
     root.mkdir(parents=True, exist_ok=False)
     source: dict[str, Any] | None = None
     try:
@@ -350,7 +364,12 @@ def run_release(
         result_path = root / "child_result.json"
         outcome = supervise(
             _optimization_child,
-            (release_config(engine, root), str(result_path), environment),
+            (
+                release_config(engine, root),
+                str(result_path),
+                environment,
+                seed_candidate,
+            ),
             HOST_TIMEOUT_SECONDS,
         )
         if outcome["status"] == "timeout":
@@ -362,6 +381,12 @@ def run_release(
             )
         result = child["result"]
         _valid_result(result)
+        if candidate_out is not None:
+            if candidate_out.exists():
+                raise ValueError("candidate output already exists")
+            write_verified_bytes(
+                candidate_out, result["best_candidate"].encode("utf-8")
+            )
         summary_path = root / "output" / "summary.json"
         _summary(summary_path)
         evidence = read_adapter_evidence(
@@ -375,10 +400,12 @@ def run_release(
             "skill": skill / "SKILL.md",
             "launcher": Path(staged["launcher"]),
             "adapter": Path(staged["adapter_module"]),
+            "codex_lm": skill / "scripts" / "codex_lm.py",
             "summary": summary_path,
             "invocation": evidence.invocation_paths[0],
             "session": evidence.session_paths[0],
             "manifest": manifest,
+            "contract": SCRIPT_DIR / "release_omni_contract.py",
         }
         if auth_mode not in {"chatgpt_login", "codex_api_key"}:
             raise ValueError("invalid authentication mode")
@@ -408,7 +435,14 @@ def run_release(
                 "improved": result["best_score"] == 1.0,
                 "best_score": result["best_score"],
                 "total_evals": result["total_evals"],
+                "best_candidate_sha256": hashlib.sha256(
+                    result["best_candidate"].encode("utf-8")
+                ).hexdigest(),
             },
+            "contract_sha256": contract_sha256(),
+            "seed_candidate_sha256": hashlib.sha256(
+                seed_candidate.encode("utf-8")
+            ).hexdigest(),
             "usage": evidence.usage,
             "cost": {
                 "estimated_usd": evidence.estimated_cost_usd,
@@ -452,6 +486,9 @@ def run_release(
 def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--engine", required=True, choices=sorted(ENGINES))
+    parser.add_argument("--output-dir", type=Path)
+    parser.add_argument("--seed-file", type=Path)
+    parser.add_argument("--candidate-out", type=Path)
     return parser.parse_args(argv)
 
 
@@ -460,7 +497,17 @@ def main(argv: list[str] | None = None) -> int:
     if os.environ.get("RUN_CODEX_LIVE") != "1":
         print("release dogfood requires RUN_CODEX_LIVE=1", file=sys.stderr)
         return 2
-    receipt, _receipt_path = run_release(args.engine)
+    seed_candidate = (
+        args.seed_file.read_text(encoding="utf-8")
+        if args.seed_file
+        else SEED_CANDIDATE
+    )
+    receipt, _receipt_path = run_release(
+        args.engine,
+        args.output_dir,
+        seed_candidate=seed_candidate,
+        candidate_out=args.candidate_out,
+    )
     print(json.dumps(receipt, sort_keys=True))
     return 0 if receipt["status"] == "success" else 1
 

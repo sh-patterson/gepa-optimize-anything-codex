@@ -9,15 +9,11 @@ no-call checks below use fake processes only.
 
 ## Engine certification boundary
 
-`gepa` and `best_of_n` have narrow installed-plugin probe evidence.
-AutoResearch is **NOT VERIFIED** for a yielded or long-running evaluator. A
-successful outer Codex receipt cannot certify that GEPA drained its evaluation
-server, selected a completed candidate, or preserved feedback order. Do not
-certify AutoResearch from the command listed below until a later upstream GEPA pin meets the gate in
-[`UPSTREAM.md`](../UPSTREAM.md).
-
-MetaHarness has separate evidence requirements. Its command may exercise the
-runtime, but it does not establish AutoResearch or full Omni support.
+`gepa` and `best_of_n` have narrow installed-plugin probe evidence. The pinned
+GEPA commit's focused tests verify AutoResearch's drain barrier,
+receipt-derived winner, and feedback ordering. Installed AutoResearch,
+MetaHarness, and their paper-informed composition still require the bounded
+four-stage live certifier below.
 
 ## Prepare the installed artifact
 
@@ -53,6 +49,20 @@ python -m ruff check .
 Every command below can make a model call. Obtain fresh authorization first.
 Run them serially with zero retries.
 
+The paper-informed optimize-everything certifier is the closing release gate:
+
+```bash
+RUN_CODEX_LIVE=1 python scripts/release_phase_certifier.py \
+  --output-dir /tmp/paper-informed-phase-certification
+```
+
+It runs equal `max_evals=10` Phase 1 slices for GEPA, AutoResearch, and
+MetaHarness concurrently, selects the best shared deterministic score, and
+seeds a fresh AutoResearch process with the exact winner bytes. Its ceiling is
+four Luna/high optimizer calls, zero retries, and no judge calls. Equal
+evaluation counts are not a dollar-matched reproduction of the published
+experiment.
+
 Prove the installed compatibility adapter independently before exercising any
 optimizer or evaluator:
 
@@ -78,9 +88,10 @@ RUN_CODEX_LIVE=1 python scripts/release_inprocess_smoke.py \
   --engine best_of_n --output-dir /tmp/best-of-n-smoke
 ```
 
-## Unverified agentic runtime exercises
+## Individual agentic runtime exercises
 
-These commands exercise agentic runtime setup. They are not certification.
+These commands exercise one agentic runtime at a time. They do not certify the
+paper-informed composition.
 
 ```bash
 RUN_CODEX_LIVE=1 python scripts/release_dogfood.py --engine autoresearch

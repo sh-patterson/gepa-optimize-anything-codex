@@ -66,8 +66,8 @@ Do not call a run Omni unless all three required engines reached valid terminal 
 shared evaluator, the Phase 1 winner was selected from comparable scores, and a fresh continuation
 received the exact winner bytes.
 
-As of v1.0.3, the installed Codex paths for GEPA and best-of-N have narrow probe evidence.
-AutoResearch is **NOT VERIFIED** for yielded or long-running evaluators. MetaHarness still needs a
-separate bounded live proof. The composition API exists, but a full three-engine Codex Omni run is
-not certified. A run that excludes an unsupported engine may be described as a paper-informed
-composition, not as a reproduction of the published Omni method.
+As of v1.0.3, the installed Codex paths for GEPA and best-of-N have narrow probe evidence, and the
+exact pinned GEPA checkout's tests verify AutoResearch's drain barrier, receipt-derived winner, and
+feedback ordering. Installed AutoResearch, MetaHarness, and the complete three-engine continuation
+remain pending until the public phase certifier passes. Until then, describe the implementation as
+paper-informed and not as a certified reproduction of the published Omni method.

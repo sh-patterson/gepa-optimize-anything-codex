@@ -25,8 +25,8 @@ def test_release_policy_is_fixed_for_each_agentic_engine(tmp_path: Path) -> None
     meta_harness = release_dogfood.release_config("meta_harness", tmp_path)
 
     for config in (autoresearch, meta_harness):
-        assert config["max_evals"] == 3
-        assert config["stop_at_score"] == 1.0
+        assert config["max_evals"] == 10
+        assert config["stop_at_score"] is None
         assert config["sandbox"] is True
         assert config["engine_config"]["model"] == "gpt-5.6-luna"
         assert config["engine_config"]["effort"] == "high"

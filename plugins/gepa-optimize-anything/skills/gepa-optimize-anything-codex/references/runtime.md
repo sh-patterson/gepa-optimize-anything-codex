@@ -42,10 +42,9 @@ only.
 ## Engine evidence boundary
 
 `gepa` and `best_of_n` have narrow probe evidence through the installed
-`CodexLM` callable. AutoResearch is **NOT VERIFIED** for a yielded or
-long-running evaluator. The adapter's completed JSONL receipt proves the outer
-Codex process completed. It cannot prove that GEPA's separate evaluation server
-has drained or that feedback reached the next AutoResearch proposal.
-
-MetaHarness has separate evidence requirements. Treat it as unverified until a
-bounded probe reconciles its proposal, evaluator, and winner receipts.
+`CodexLM` callable. The exact pinned GEPA checkout's tests verify
+AutoResearch's evaluation-session drain barrier, receipt-derived winner, and
+feedback ordering. A completed adapter JSONL alone still proves only the outer
+Codex process. Installed AutoResearch and MetaHarness require branch receipts,
+and the full method requires a conserved Phase 1 winner in a fresh
+AutoResearch continuation.

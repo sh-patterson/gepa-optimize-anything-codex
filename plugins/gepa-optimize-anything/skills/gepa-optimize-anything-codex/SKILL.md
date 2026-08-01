@@ -66,10 +66,11 @@ installed callable for the in-process `gepa` and `best_of_n` engines. It pins
 `gpt-5.6-luna` with `high` reasoning and requires a fresh state and session
 directory for each engine. macOS agentic execution is unsupported.
 
-The `gepa` and `best_of_n` paths have narrow probe evidence. AutoResearch is
-**NOT VERIFIED** for yielded or long-running evaluators. A completed Codex turn
-does not prove that the upstream evaluation server has finished or that it fed
-the result into the next proposal. MetaHarness needs separate bounded evidence.
+The `gepa` and `best_of_n` paths have narrow probe evidence. The pinned GEPA
+commit's tests verify AutoResearch's evaluation-session drain barrier,
+receipt-derived winner, and feedback ordering. Installed AutoResearch,
+MetaHarness, and the full paper-informed composition remain pending until the
+bounded phase certifier passes against one installed artifact.
 
 This makes it easy to start with one backend and benchmark others on the identical task/evaluator.
 There are also **composition/pipeline helpers** that combine backends over the same task:
