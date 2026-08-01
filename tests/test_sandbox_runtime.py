@@ -93,6 +93,13 @@ def test_runtime_environment_isolated_to_the_staged_home_and_cache(tmp_path: Pat
     assert environment["CODEX_ADAPTER_STATE_DIR"] == str(state)
 
 
+def test_probe_uses_a_unique_marker_for_shared_codex_home() -> None:
+    script = sandbox_runtime._probe_script()
+
+    assert 'f".sandbox-runtime-probe-{uuid.uuid4().hex}"' in script
+    assert 'directory / ".sandbox-runtime-probe"' not in script
+
+
 def test_state_dir_must_be_an_explicit_child_of_runs_root(tmp_path: Path) -> None:
     home = tmp_path / "home"
     codex = _fake_codex(home)

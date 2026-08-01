@@ -143,7 +143,7 @@ def test_runner_injects_codex_driver_into_inprocess_engines(
         "probe_success": True,
     }
 
-    result, usage, lms = smoke._run_codex(
+    result, usage, lms, state_dirs = smoke._run_codex(
         engine, smoke.config_for(engine, tmp_path), runtime, smoke.SEED
     )
 
@@ -158,6 +158,8 @@ def test_runner_injects_codex_driver_into_inprocess_engines(
     }
     assert lms == instances
     assert len(instances) == 1
+    assert len(state_dirs) == 1
+    assert state_dirs[0].parent == runtime["state_dir"]
 
 
 def test_codex_runtime_rejects_api_keys_before_staging(
@@ -237,6 +239,41 @@ def test_smoke_requires_the_installed_public_codex_driver(
     (skill / "scripts" / "codex_lm.py").unlink()
     with pytest.raises(FileNotFoundError):
         smoke._load_script(skill / "scripts" / "codex_lm.py", "missing_public_driver")
+
+
+def test_live_smoke_reads_the_exact_codex_lm_state_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    skill = _installed_skill(tmp_path)
+    monkeypatch.setenv("GEPA_CODEX_SKILL_DIR", str(skill))
+    monkeypatch.setattr(smoke, "installed_provenance", _provenance)
+    parent_state = tmp_path / "output" / "adapter-state"
+    lm_state = parent_state / "gepa-one"
+    runtime = {
+        "launcher": skill / "scripts" / "claude",
+        "adapter": skill / "scripts" / "codex_claude_adapter.py",
+        "state_dir": parent_state,
+        "probe_success": True,
+    }
+    monkeypatch.setattr(smoke, "_prepare_codex_runtime", lambda *_args: runtime)
+    lm = type("LM", (), {"invocation_count": 1, "total_cost": 0.001})()
+    monkeypatch.setattr(
+        smoke,
+        "_run_codex",
+        lambda *_args: (_Result(), FULL_USAGE, [lm], [lm_state]),
+    )
+    seen: list[Path] = []
+
+    def evidence_for(state_dir: Path, **_kwargs: object) -> object:
+        seen.append(state_dir)
+        return _evidence()
+
+    monkeypatch.setattr(smoke, "read_adapter_evidence", evidence_for)
+
+    receipt = smoke.run_smoke("gepa", tmp_path / "output")
+
+    assert receipt["status"] == "success"
+    assert seen == [lm_state]
 
 
 def test_cli_requires_explicit_live_authorization(

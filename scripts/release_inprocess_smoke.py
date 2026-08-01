@@ -193,15 +193,17 @@ def _run_codex(
     values: dict[str, Any],
     runtime: dict[str, Any],
     seed_candidate: str,
-) -> tuple[object, dict[str, int], list[object]]:
+) -> tuple[object, dict[str, int], list[object], list[Path]]:
     from gepa.optimize_anything import OptimizeAnythingConfig, optimize_anything
 
     lms: list[object] = []
+    state_dirs: list[Path] = []
 
     def new_lm(model: str, **kwargs: Any) -> object:
         if model != MODEL:
             raise ValueError(f"unexpected in-process model: {model}")
         state_dir = runtime["state_dir"] / f"{engine}-{uuid4().hex}"
+        state_dirs.append(state_dir)
         config = runtime["driver"].CodexLMConfig(
             executable=runtime["launcher"],
             model=MODEL,
@@ -253,7 +255,7 @@ def _run_codex(
         finally:
             best_of_n.LM = native_lm
     usage = _codex_usage(lms)
-    return raw, usage, lms
+    return raw, usage, lms, state_dirs
 
 
 def run_smoke(
@@ -272,7 +274,9 @@ def run_smoke(
     values = config_for(engine, output_dir)
     if optimize is None:
         runtime = _prepare_codex_runtime(skill, output_dir)
-        raw, usage, lms = _run_codex(engine, values, runtime, seed_candidate)
+        raw, usage, lms, evidence_state_dirs = _run_codex(
+            engine, values, runtime, seed_candidate
+        )
         expected_invocations = sum(
             int(getattr(lm, "invocation_count", 0)) for lm in lms
         )
@@ -295,10 +299,13 @@ def run_smoke(
             "state_dir": output_dir / "adapter-state",
             "probe_success": True,
         }
+        evidence_state_dirs = [runtime["state_dir"]]
         expected_invocations = 1
         driver_cost = 0.001
+    if len(evidence_state_dirs) != 1:
+        raise RuntimeError("release proof requires exactly one CodexLM state directory")
     evidence = read_adapter_evidence(
-        runtime["state_dir"],
+        evidence_state_dirs[0],
         target_model=MODEL,
         reasoning_effort=REASONING_EFFORT,
         expected_invocations=expected_invocations,

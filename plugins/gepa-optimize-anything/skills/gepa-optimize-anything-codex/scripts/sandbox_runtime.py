@@ -167,6 +167,7 @@ import os
 import shutil
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 
 launcher = Path(os.environ["GEPA_CODEX_LAUNCHER"])
@@ -196,7 +197,7 @@ if not os.environ.get("CODEX_API_KEY"):
 for name in ("CODEX_HOME", "CODEX_ADAPTER_STATE_DIR"):
     directory = Path(os.environ[name])
     directory.mkdir(parents=True, exist_ok=True)
-    marker = directory / ".sandbox-runtime-probe"
+    marker = directory / f".sandbox-runtime-probe-{uuid.uuid4().hex}"
     marker.write_text("ok", encoding="utf-8")
     assert marker.read_text(encoding="utf-8") == "ok"
     marker.unlink()
