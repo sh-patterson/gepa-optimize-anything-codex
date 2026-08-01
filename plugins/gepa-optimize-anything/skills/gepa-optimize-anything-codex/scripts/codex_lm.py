@@ -49,6 +49,7 @@ class CodexLMResult:
     text: str
     status: Literal["completed"]
     usage: Mapping[str, int]
+    estimated_cost_usd: float
     upstream_session_id: str
     codex_thread_id: str
     session_mapping_path: Path
@@ -92,6 +93,7 @@ class CodexLM:
         self.total_tokens_out += result.usage["output_tokens"]
         for name, value in result.usage.items():
             self.total_usage[name] = self.total_usage.get(name, 0) + value
+        self.total_cost += result.estimated_cost_usd
         self.invocation_count += 1
         return result.text
 
@@ -123,13 +125,16 @@ class CodexLM:
             payload = json.loads(completed.stdout)
         except json.JSONDecodeError as exc:
             raise RuntimeError(f"Codex adapter returned invalid JSON; receipt={receipt}") from exc
-        text, usage, thread_id = _validated_payload(payload, completed.returncode, session_id, self.config)
+        text, usage, estimated_cost, thread_id = _validated_payload(
+            payload, completed.returncode, session_id, self.config
+        )
         mapping = self.config.session_dir / "mappings" / f"{session_id}.json"
         _write_json(mapping, {"upstream_session_id": session_id, "codex_thread_id": thread_id})
         return CodexLMResult(
             text=text,
             status="completed",
             usage=MappingProxyType(usage),
+            estimated_cost_usd=estimated_cost,
             upstream_session_id=session_id,
             codex_thread_id=thread_id,
             session_mapping_path=mapping,
@@ -180,7 +185,12 @@ class CodexLM:
 _SECRET_NAMES = frozenset({"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN", "CODEX_API_KEY", "OPENAI_API_KEY"})
 
 
-def _validated_payload(payload: object, returncode: int, session_id: str, config: CodexLMConfig) -> tuple[str, dict[str, int], str]:
+def _validated_payload(
+    payload: object,
+    returncode: int,
+    session_id: str,
+    config: CodexLMConfig,
+) -> tuple[str, dict[str, int], float, str]:
     if returncode != 0 or not isinstance(payload, dict) or payload.get("is_error") is not False:
         raise RuntimeError("Codex adapter invocation failed")
     if payload.get("session_id") != session_id or payload.get("adapter_target_model") != config.model:
@@ -192,7 +202,14 @@ def _validated_payload(payload: object, returncode: int, session_id: str, config
         raise RuntimeError("Codex adapter returned invalid usage")
     if not isinstance(usage.get("input_tokens"), int) or not isinstance(usage.get("output_tokens"), int) or usage["input_tokens"] + usage["output_tokens"] <= 0:
         raise RuntimeError("Codex adapter returned no usage")
-    return text, dict(usage), thread_id
+    estimated_cost = payload.get("total_cost_usd")
+    if (
+        isinstance(estimated_cost, bool)
+        or not isinstance(estimated_cost, (int, float))
+        or estimated_cost <= 0
+    ):
+        raise RuntimeError("Codex adapter returned no cost estimate")
+    return text, dict(usage), float(estimated_cost), thread_id
 
 
 def _write_json(path: Path, payload: object) -> None:

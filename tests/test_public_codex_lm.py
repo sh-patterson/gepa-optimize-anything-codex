@@ -38,7 +38,8 @@ def test_public_lm_returns_text_and_writes_receipts(tmp_path: Path, monkeypatch:
         session_id = command[command.index("--session-id") + 1]
         payload = {"is_error": False, "session_id": session_id,
                    "adapter_target_model": "gpt-5.6-luna", "result": "BLUE",
-                   "codex_thread_id": "thread-1", "usage": {"input_tokens": 2, "output_tokens": 3}}
+                   "codex_thread_id": "thread-1", "usage": {"input_tokens": 2, "output_tokens": 3},
+                   "total_cost_usd": 0.001}
         return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
 
     monkeypatch.setattr(codex_lm.subprocess, "run", fake_run)
@@ -48,7 +49,9 @@ def test_public_lm_returns_text_and_writes_receipts(tmp_path: Path, monkeypatch:
     assert seen[seen.index("--model") + 1] == "gpt-5.6-luna"
     assert seen[seen.index("--effort") + 1] == "high"
     assert lm.total_usage == {"input_tokens": 2, "output_tokens": 3}
+    assert lm.total_cost == pytest.approx(0.001)
     assert lm.last_result is not None
+    assert lm.last_result.estimated_cost_usd == pytest.approx(0.001)
     assert lm.last_result.raw_receipt_path.is_file()
     assert lm.last_result.session_mapping_path.is_file()
     with pytest.raises(TypeError):
@@ -62,6 +65,29 @@ def test_public_lm_rejects_reused_state_and_invalid_result(tmp_path: Path, monke
         codex_lm.CodexLM(config, cwd=tmp_path, environment={})
     monkeypatch.setattr(codex_lm.subprocess, "run", lambda *_args, **_kwargs: subprocess.CompletedProcess([], 0, "{}", ""))
     with pytest.raises(RuntimeError, match="invocation failed"):
+        lm("prompt")
+
+
+@pytest.mark.parametrize("cost", [None, 0, -1, True, "unknown"])
+def test_public_lm_rejects_invalid_cost_estimate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cost: object
+) -> None:
+    def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        session_id = command[command.index("--session-id") + 1]
+        payload = {
+            "is_error": False,
+            "session_id": session_id,
+            "adapter_target_model": "gpt-5.6-luna",
+            "result": "BLUE",
+            "codex_thread_id": "thread-1",
+            "usage": {"input_tokens": 2, "output_tokens": 3},
+            "total_cost_usd": cost,
+        }
+        return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
+
+    monkeypatch.setattr(codex_lm.subprocess, "run", fake_run)
+    lm = codex_lm.CodexLM(_config(tmp_path), cwd=tmp_path, environment={})
+    with pytest.raises(RuntimeError, match="no cost estimate"):
         lm("prompt")
 
 
