@@ -233,8 +233,8 @@ def installed_provenance(
         raise RuntimeError("release proof requires an installed plugin")
     if not (selected / "SKILL.md").is_file():
         raise RuntimeError("installed skill is missing SKILL.md")
-    if (selected / "scripts" / "codex_lm.py").exists():
-        raise RuntimeError("installed plugin must not contain codex_lm.py")
+    if not (selected / "scripts" / "codex_lm.py").is_file():
+        raise RuntimeError("installed plugin is missing codex_lm.py")
     manifest = selected.parents[1] / ".codex-plugin" / "plugin.json"
     try:
         plugin = json.loads(manifest.read_text(encoding="utf-8"))

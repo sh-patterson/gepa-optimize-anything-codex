@@ -38,3 +38,14 @@ not provide the provider-enforced per-invocation USD ceiling required by that
 flag. Bound work with evaluations, engine iterations, adapter starts, and
 `stop_at_score`. Journaled usage supports a labeled token-derived estimate
 only.
+
+## Engine evidence boundary
+
+`gepa` and `best_of_n` have narrow probe evidence through the installed
+`CodexLM` callable. AutoResearch is **NOT VERIFIED** for a yielded or
+long-running evaluator. The adapter's completed JSONL receipt proves the outer
+Codex process completed. It cannot prove that GEPA's separate evaluation server
+has drained or that feedback reached the next AutoResearch proposal.
+
+MetaHarness has separate evidence requirements. Treat it as unverified until a
+bounded probe reconciles its proposal, evaluator, and winner receipts.

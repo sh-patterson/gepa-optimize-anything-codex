@@ -133,7 +133,10 @@ args = sys.argv[1:]
 resumed = len(args) > 1 and args[0:2] == ["exec", "resume"]
 candidate = Path("best_candidate.txt")
 candidate.write_text("Return BLUE." if resumed else "Return RED again.", encoding="utf-8")
-subprocess.run(["./eval.sh", str(candidate)], check=False)
+eval_script = "./eval.sh"
+if resumed:
+    eval_script = args[-1].rsplit("Use ", 1)[1].removesuffix(" for this invocation.")
+subprocess.run([eval_script, str(candidate)], check=False)
 with (Path(os.environ["CODEX_ADAPTER_STATE_DIR"]) / "codex-invocations.jsonl").open("a", encoding="utf-8") as log:
     log.write(json.dumps(args) + "\\n")
 if not resumed:
@@ -184,6 +187,7 @@ print(json.dumps({
     assert "resume" not in invocations[0]
     assert invocations[1][0:2] == ["exec", "resume"]
     assert "codex-thread-1" in invocations[1]
+    assert "eval-2.sh" in invocations[1][-1]
     assert all("--max-budget-usd" not in invocation for invocation in invocations)
     assert result.best_candidate == "Return BLUE."
     assert result.best_score == 1.0

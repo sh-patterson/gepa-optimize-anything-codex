@@ -60,10 +60,16 @@ argument** — and the same code runs under any of them:
 (There is also a `best_of_n` engine — sample N independent candidates, keep the best. It is
 deliberately naive: use it as a **baseline** to compare an optimizer against, not as the optimizer.)
 
-This plugin's public Codex adapter covers the Linux-only `autoresearch` and
-`meta_harness` subprocess boundary. The in-process `gepa` and `best_of_n`
-engines retain GEPA's upstream LM interface. macOS agentic execution is
-unsupported.
+This plugin translates the Linux-only `autoresearch` and `meta_harness`
+subprocess boundary to Codex. `scripts/codex_lm.py` exports `CodexLM`, the
+installed callable for the in-process `gepa` and `best_of_n` engines. It pins
+`gpt-5.6-luna` with `high` reasoning and requires a fresh state and session
+directory for each engine. macOS agentic execution is unsupported.
+
+The `gepa` and `best_of_n` paths have narrow probe evidence. AutoResearch is
+**NOT VERIFIED** for yielded or long-running evaluators. A completed Codex turn
+does not prove that the upstream evaluation server has finished or that it fed
+the result into the next proposal. MetaHarness needs separate bounded evidence.
 
 This makes it easy to start with one backend and benchmark others on the identical task/evaluator.
 There are also **composition/pipeline helpers** that combine backends over the same task:
@@ -106,7 +112,7 @@ even see it). See `references/api.md` for details and when to use each mode.
 
 ## Install
 ```bash
-pip install "gepa[full] @ git+https://github.com/gepa-ai/gepa.git@0310bb7b4952d4695718f9f557e450fd6781301e"
+pip install "gepa[full] @ git+https://github.com/sh-patterson/gepa.git@3a6f93c5dd0beb68825973b3b2f2cae23060bbbb"
 # [full] pulls cloudpickle — needed to pickle closure evaluators for
                            # parallel workers / opt-in evaluation caching; plain `pip install gepa`
                            # can fail there when your evaluator closes over data.

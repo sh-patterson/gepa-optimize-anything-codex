@@ -24,15 +24,22 @@ preflight, and inspect the result.
 
 ## Supported engines
 
-| Engine | Execution | Model interface | Platform |
+| Engine | Execution | Model interface | Evidence |
 |---|---|---|---|
-| `gepa` | In process | GEPA's upstream LM interface | Any GEPA-supported host |
-| `best_of_n` | In process | GEPA's upstream LM interface | Any GEPA-supported host |
-| `autoresearch` | Codex subprocess | Installed Codex adapter | Linux with Bubblewrap |
-| `meta_harness` | Codex subprocess | Installed Codex adapter | Linux with Bubblewrap |
+| `gepa` | In process | Installed `CodexLM` | Narrow probe verified |
+| `best_of_n` | In process | Installed `CodexLM` | Narrow probe verified |
+| `autoresearch` | Codex subprocess | Installed Codex adapter | Not verified for yielded or long-running evaluators |
+| `meta_harness` | Codex subprocess | Installed Codex adapter | Separate evidence required |
 
-The public Codex adapter supports `autoresearch` and `meta_harness`. It does not
-replace GEPA's in-process LM interface or add a new optimizer.
+`gepa` and `best_of_n` have narrow probe receipts. AutoResearch is **NOT VERIFIED**
+for a yielded or long-running evaluator. A completed adapter receipt proves only
+that the outer Codex turn completed. It does not prove that GEPA's
+evaluation server drained, promoted a completed candidate, or waited for
+feedback before another proposal. MetaHarness has separate evidence
+requirements and remains unverified until its own bounded probe passes.
+
+The installed `scripts/codex_lm.py` callable supplies Codex to the two
+in-process engines. It does not add a new optimizer.
 
 ## Requirements
 
