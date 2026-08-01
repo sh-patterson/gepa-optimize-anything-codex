@@ -138,7 +138,9 @@ def _validate_payload(completed: subprocess.CompletedProcess[str]) -> dict[str, 
     return payload
 
 
-def _raw_terminal(path: Path) -> dict[str, Any]:
+def _raw_terminal(
+    path: Path, *, expected_thread_id: str | None = None
+) -> dict[str, Any]:
     records: list[dict[str, Any]] = []
     for line in path.read_text(encoding="utf-8").splitlines():
         try:
@@ -170,20 +172,24 @@ def _raw_terminal(path: Path) -> dict[str, Any]:
         and isinstance(record.get("item"), dict)
         and record["item"].get("type") == "agent_message"
     ]
+    valid_thread_count = len(threads) == 1 if expected_thread_id is None else len(threads) <= 1
+    first_event = threads[0][0] if threads else -1
     if not (
-        len(threads) == 1
+        valid_thread_count
         and len(starts) == 1
         and len(completions) == 1
         and messages
-        and threads[0][0] < starts[0]
+        and first_event < starts[0]
         and starts[0] < messages[0][0] <= messages[-1][0] < completions[0][0]
     ):
         raise RuntimeError("Codex JSONL terminal sequence is incomplete")
-    thread_id = threads[0][1].get("thread_id")
+    thread_id = threads[0][1].get("thread_id") if threads else expected_thread_id
     message = messages[-1][1].get("text")
     usage = completions[0][1].get("usage")
     if not isinstance(thread_id, str) or not thread_id:
         raise RuntimeError("Codex JSONL lacks a thread ID")
+    if expected_thread_id is not None and thread_id != expected_thread_id:
+        raise RuntimeError("Codex JSONL resumed the wrong thread")
     if not isinstance(message, str) or message.strip() != EXPECTED_RESULT:
         raise RuntimeError("Codex JSONL lacks the expected final message")
     if (
@@ -196,6 +202,14 @@ def _raw_terminal(path: Path) -> dict[str, Any]:
     ):
         raise RuntimeError("Codex JSONL lacks positive usage")
     return {"thread_id": thread_id, "message": EXPECTED_RESULT, "usage": usage}
+
+
+def _sum_usage(records: list[dict[str, Any]]) -> dict[str, int]:
+    usage: dict[str, int] = {}
+    for record in records:
+        for name, value in record["usage"].items():
+            usage[name] = usage.get(name, 0) + value
+    return usage
 
 
 def _capture_wrapper(real_codex: Path, raw_jsonl: Path, wrapper: Path) -> Path:
@@ -243,7 +257,7 @@ def run_smoke(output_dir: Path, expected_commit: str) -> dict[str, Any]:
     environment.update(
         {
             "CODEX_ADAPTER_AUTH_MODE": "chatgpt_login",
-            "CODEX_ADAPTER_MAX_INVOCATIONS": "1",
+            "CODEX_ADAPTER_MAX_INVOCATIONS": "2",
             "CODEX_ADAPTER_PRE_SUBMISSION_RETRIES": "0",
         }
     )
@@ -251,74 +265,98 @@ def run_smoke(output_dir: Path, expected_commit: str) -> dict[str, Any]:
         environment.get(name) for name in API_KEY_NAMES
     ):
         raise RuntimeError("adapter smoke requires staged login without API keys")
-    raw_jsonl = output_dir / "codex-terminal.jsonl"
-    capture_wrapper = _capture_wrapper(
-        paths.codex, raw_jsonl, output_dir / "codex-capture"
-    )
-    environment["CODEX_CLI"] = str(capture_wrapper)
-    command = [
-        str(skill / "scripts" / "claude"),
-        "--print",
-        "Reply with exactly the lowercase word: ok",
-        "--session-id",
-        f"adapter-smoke-{uuid.uuid4().hex}",
-        "--output-format",
-        "json",
-        "--model",
-        TARGET_MODEL,
-        "--effort",
-        REASONING_EFFORT,
-    ]
+    session_id = f"adapter-smoke-{uuid.uuid4().hex}"
     started = time.monotonic()
-    completed = subprocess.run(
-        command,
-        cwd=output_dir,
-        env=environment,
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=HOST_TIMEOUT_SECONDS,
-    )
-    stdout_path = output_dir / "adapter-stdout.json"
-    stderr_path = output_dir / "adapter-stderr.txt"
-    stdout_path.write_text(completed.stdout, encoding="utf-8")
-    stderr_path.write_text(completed.stderr, encoding="utf-8")
-    payload = _validate_payload(completed)
-    raw_terminal = _raw_terminal(raw_jsonl)
+    completed_calls: list[subprocess.CompletedProcess[str]] = []
+    payloads: list[dict[str, Any]] = []
+    raw_terminals: list[dict[str, Any]] = []
+    output_paths: list[Path] = []
+    raw_paths: list[Path] = []
+    for ordinal, resume in enumerate((False, True), start=1):
+        raw_jsonl = output_dir / f"codex-terminal-{ordinal}.jsonl"
+        capture_wrapper = _capture_wrapper(
+            paths.codex, raw_jsonl, output_dir / f"codex-capture-{ordinal}"
+        )
+        environment["CODEX_CLI"] = str(capture_wrapper)
+        command = [
+            str(skill / "scripts" / "claude"),
+            "--print",
+            "Reply with exactly the lowercase word: ok",
+            "--resume" if resume else "--session-id",
+            session_id,
+            "--output-format",
+            "json",
+            "--model",
+            TARGET_MODEL,
+            "--effort",
+            REASONING_EFFORT,
+        ]
+        completed = subprocess.run(
+            command,
+            cwd=output_dir,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=HOST_TIMEOUT_SECONDS,
+        )
+        stdout_path = output_dir / f"adapter-stdout-{ordinal}.json"
+        stderr_path = output_dir / f"adapter-stderr-{ordinal}.txt"
+        stdout_path.write_text(completed.stdout, encoding="utf-8")
+        stderr_path.write_text(completed.stderr, encoding="utf-8")
+        payload = _validate_payload(completed)
+        expected_thread_id = raw_terminals[0]["thread_id"] if resume else None
+        raw_terminal = _raw_terminal(
+            raw_jsonl, expected_thread_id=expected_thread_id
+        )
+        completed_calls.append(completed)
+        payloads.append(payload)
+        raw_terminals.append(raw_terminal)
+        output_paths.extend((stdout_path, stderr_path, capture_wrapper))
+        raw_paths.append(raw_jsonl)
     evidence = read_adapter_evidence(
         state_dir,
         target_model=TARGET_MODEL,
         reasoning_effort=REASONING_EFFORT,
-        expected_invocations=1,
+        expected_invocations=2,
     )
-    mapping = evidence.mappings[0]
-    if mapping["resume"]:
-        raise RuntimeError("adapter smoke unexpectedly resumed")
+    initial = next((mapping for mapping in evidence.mappings if not mapping["resume"]), None)
+    resumed = next((mapping for mapping in evidence.mappings if mapping["resume"]), None)
+    if initial is None or resumed is None:
+        raise RuntimeError("adapter smoke lacks initial or resumed evidence")
     if (
-        raw_terminal["thread_id"] != mapping["codex_thread_id"]
-        or raw_terminal["usage"] != evidence.usage
-        or payload.get("codex_thread_id") != raw_terminal["thread_id"]
-        or payload.get("usage") != raw_terminal["usage"]
-        or payload.get("adapter_target_model") != TARGET_MODEL
+        initial["upstream_session_id"] != resumed["upstream_session_id"]
+        or initial["codex_thread_id"] != resumed["codex_thread_id"]
+        or initial["codex_thread_id"] != raw_terminals[0]["thread_id"]
+        or raw_terminals[0]["thread_id"] != raw_terminals[1]["thread_id"]
+        or evidence.usage != _sum_usage(raw_terminals)
     ):
-        raise RuntimeError("adapter outputs do not conserve the raw Codex terminal")
+        raise RuntimeError("adapter resume did not conserve session or usage")
+    for payload, raw_terminal in zip(payloads, raw_terminals, strict=True):
+        if (
+            payload.get("codex_thread_id") != raw_terminal["thread_id"]
+            or payload.get("usage") != raw_terminal["usage"]
+            or payload.get("adapter_target_model") != TARGET_MODEL
+        ):
+            raise RuntimeError("adapter outputs do not conserve the raw Codex terminal")
     evidence_files = {
         "runner": Path(__file__).resolve(),
         "installed_manifest": skill.parents[1] / ".codex-plugin" / "plugin.json",
         "installed_launcher": skill / "scripts" / "claude",
         "installed_adapter": skill / "scripts" / "codex_claude_adapter.py",
         "installed_runtime": skill / "scripts" / "sandbox_runtime.py",
-        "adapter_stdout": stdout_path,
-        "adapter_stderr": stderr_path,
-        "codex_capture": capture_wrapper,
-        "codex_terminal_jsonl": raw_jsonl,
-        "invocation_journal": evidence.invocation_paths[0],
+        **{f"adapter_output_{index}": path for index, path in enumerate(output_paths)},
+        **{f"codex_terminal_jsonl_{index}": path for index, path in enumerate(raw_paths)},
+        **{
+            f"invocation_journal_{index}": path
+            for index, path in enumerate(evidence.invocation_paths)
+        },
         "session_mapping": evidence.session_paths[0],
     }
     receipt = {
         "schema_version": 1,
         "status": "success",
-        "proof": "installed_adapter_smoke",
+        "proof": "installed_adapter_session_smoke",
         "scope": "adapter_only",
         "excluded": [
             "gepa_optimizer",
@@ -330,20 +368,20 @@ def run_smoke(output_dir: Path, expected_commit: str) -> dict[str, Any]:
         "policy": {
             "model": TARGET_MODEL,
             "reasoning_effort": REASONING_EFFORT,
-            "max_adapter_invocations": 1,
+            "max_adapter_invocations": 2,
             "pre_submission_retries": 0,
             "host_timeout_seconds": HOST_TIMEOUT_SECONDS,
         },
         "provenance": provenance,
         "terminal": {
-            "return_code": completed.returncode,
-            "subtype": payload["subtype"],
-            "result": EXPECTED_RESULT,
+            "return_codes": [completed.returncode for completed in completed_calls],
+            "subtypes": [payload["subtype"] for payload in payloads],
+            "results": [EXPECTED_RESULT, EXPECTED_RESULT],
             "raw_jsonl_reconciled": True,
         },
         "usage": evidence.usage,
         "estimated_cost_usd": evidence.estimated_cost_usd,
-        "session_mapping": mapping,
+        "session_mapping": {"initial": initial, "resumed": resumed},
         "duration_ms": round((time.monotonic() - started) * 1000),
         "hashes": hash_files(evidence_files),
     }

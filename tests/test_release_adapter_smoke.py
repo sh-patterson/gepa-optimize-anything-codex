@@ -94,6 +94,12 @@ def test_raw_terminal_requires_ordered_completed_jsonl(
     with pytest.raises(RuntimeError, match="sequence"):
         smoke._raw_terminal(path)
 
+    path.write_text(
+        "\n".join(json.dumps(record) for record in records[1:]) + "\n",
+        encoding="utf-8",
+    )
+    assert smoke._raw_terminal(path, expected_thread_id="thread-1")["thread_id"] == "thread-1"
+
 
 def test_installed_provenance_binds_files_to_exact_commit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -177,13 +183,18 @@ def test_smoke_runs_installed_adapter_and_conserves_fake_terminal(
     codex.write_text(
         f"""#!{sys.executable}
 import json
+import sys
 
-for record in (
-    {{"type": "thread.started", "thread_id": "thread-1"}},
+resumed = sys.argv[1:3] == ["exec", "resume"]
+records = []
+if not resumed:
+    records.append({{"type": "thread.started", "thread_id": "thread-1"}})
+records.extend((
     {{"type": "turn.started"}},
     {{"type": "item.completed", "item": {{"type": "agent_message", "text": "ok"}}}},
-    {{"type": "turn.completed", "usage": {{"input_tokens": 2, "output_tokens": 1}}}},
-):
+    {{"type": "turn.completed", "usage": {{"input_tokens": 3 if resumed else 2, "output_tokens": 1}}}},
+))
+for record in records:
     print(json.dumps(record))
 """,
         encoding="utf-8",
@@ -209,14 +220,20 @@ for record in (
     assert receipt["status"] == "success"
     assert receipt["scope"] == "adapter_only"
     assert receipt["terminal"] == {
-        "return_code": 0,
-        "subtype": "success",
-        "result": "ok",
+        "return_codes": [0, 0],
+        "subtypes": ["success", "success"],
+        "results": ["ok", "ok"],
         "raw_jsonl_reconciled": True,
     }
-    assert receipt["usage"] == {"input_tokens": 2, "output_tokens": 1}
-    assert receipt["session_mapping"]["resume"] is False
-    assert (output / "codex-terminal.jsonl").is_file()
+    assert receipt["usage"] == {"input_tokens": 5, "output_tokens": 2}
+    assert receipt["session_mapping"]["initial"]["resume"] is False
+    assert receipt["session_mapping"]["resumed"]["resume"] is True
+    assert (
+        receipt["session_mapping"]["initial"]["codex_thread_id"]
+        == receipt["session_mapping"]["resumed"]["codex_thread_id"]
+    )
+    assert (output / "codex-terminal-1.jsonl").is_file()
+    assert (output / "codex-terminal-2.jsonl").is_file()
     assert json.loads(
         (output / "adapter-smoke-receipt.json").read_text(encoding="utf-8")
     ) == receipt
