@@ -59,6 +59,10 @@ def test_marketplace_points_to_the_skills_only_plugin():
     ]
     assert manifest["name"] == "gepa-optimize-anything"
     assert manifest["skills"] == "./skills/"
+    assert "paper-informed" in manifest["interface"]["longDescription"]
+    assert "GEPA, AutoResearch, and MetaHarness" in manifest["interface"][
+        "longDescription"
+    ]
     assert "hooks" not in manifest
     assert "mcpServers" not in manifest
     assert "apps" not in manifest

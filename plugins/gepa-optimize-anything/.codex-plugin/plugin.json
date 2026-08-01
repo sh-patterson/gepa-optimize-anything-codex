@@ -13,13 +13,13 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "GEPA Optimize Anything for Codex",
-    "shortDescription": "Optimize scored text artifacts through Codex.",
-    "longDescription": "Run GEPA's text optimization engines through Codex, including the supported in-process adapter for GEPA and best-of-N.",
+    "shortDescription": "Optimize scored text across Codex-backed search engines.",
+    "longDescription": "Run scored-text optimization through Codex with individual engines or the paper-informed GEPA, AutoResearch, and MetaHarness early-search and fresh-continuation method.",
     "developerName": "Shawn Patterson",
     "category": "Engineering",
     "capabilities": ["Interactive", "Write"],
     "defaultPrompt": [
-      "Use GEPA Optimize Anything through Codex to improve this scored text artifact."
+      "Use the paper-informed optimize-everything method through Codex to improve this scored text artifact."
     ]
   }
 }
