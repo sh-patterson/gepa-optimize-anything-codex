@@ -36,7 +36,7 @@ def _installed_skill(tmp_path: Path) -> Path:
     )
     manifest = plugin / ".codex-plugin" / "plugin.json"
     manifest.parent.mkdir()
-    manifest.write_text('{"version":"1.0.3"}\n', encoding="utf-8")
+    manifest.write_text('{"version":"1.1.0"}\n', encoding="utf-8")
     return skill
 
 
@@ -45,7 +45,7 @@ def _provenance(skill: Path, *_args: object) -> dict[str, object]:
         "installed_plugin": True,
         "skill_path": str(skill),
         "plugin_manifest": str(skill.parents[1] / ".codex-plugin" / "plugin.json"),
-        "plugin_version": "1.0.3",
+        "plugin_version": "1.1.0",
         "repository_commit": "a" * 40,
         "gepa_commit": "b" * 40,
     }

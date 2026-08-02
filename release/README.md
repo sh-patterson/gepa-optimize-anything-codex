@@ -3,11 +3,11 @@
 These commands certify an installed marketplace artifact. They are not the
 normal user workflow.
 
-Version 1.0.3 introduced the repaired AutoResearch evaluation lifecycle. The
-post-tag public deterministic certification at runtime commit `3a9ff30` closed
-the installed paper-informed composition gate on `main`. The no-call checks
-below use fake processes only; the recorded live receipt remains the evidence
-for the bounded composition claim.
+Version 1.1.0 packages the repaired AutoResearch evaluation lifecycle and the
+paper-informed multi-engine composition. It is released only after the public
+deterministic phase certifier passes against the exact installed tag candidate.
+The no-call checks below use fake processes only; the recorded live receipt is
+the evidence for the bounded composition claim.
 
 ## Engine certification boundary
 

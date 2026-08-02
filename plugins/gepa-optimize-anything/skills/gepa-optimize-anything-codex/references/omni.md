@@ -66,11 +66,11 @@ Do not call a run Omni unless all three required engines reached valid terminal 
 shared evaluator, the Phase 1 winner was selected from comparable scores, and a fresh continuation
 received the exact winner bytes.
 
-As of v1.0.3 at certification commit `3a9ff30`, the public deterministic phase certifier passed
-against one installed artifact. GEPA, AutoResearch, and MetaHarness ran equal `max_evals=10` slices
-against one evaluator; deterministic selection chose the highest shared score; and a fresh
-AutoResearch process received the exact winner bytes. Describe this as a certified paper-informed
-composition. It is not evidence of semantic quality or generalization, and equal evaluation counts
-are not a dollar-matched reproduction of the published Omni experiment.
+Version 1.1.0 is released only after the public deterministic phase certifier passes against the
+exact installed tag candidate. GEPA, AutoResearch, and MetaHarness run equal `max_evals=10` slices
+against one evaluator; deterministic selection chooses the highest shared score; and a fresh
+AutoResearch process receives the exact winner bytes. Describe the resulting evidence as a
+certified paper-informed composition. It is not evidence of semantic quality or generalization,
+and equal evaluation counts are not a dollar-matched reproduction of the published Omni experiment.
 The pinned lifecycle tests separately retain the evaluation-session drain barrier and
 receipt-derived winner guarantees.
