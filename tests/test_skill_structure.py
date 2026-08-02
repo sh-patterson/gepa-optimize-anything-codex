@@ -109,6 +109,17 @@ def test_supported_codex_cli_version_is_pinned_consistently():
     assert 'grep -F "0.146.0"' in workflow
 
 
+def test_clean_install_derives_expected_plugin_version():
+    workflow = (ROOT / ".github" / "workflows" / "verify.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'EXPECTED_VERSION="$(jq -er' in workflow
+    assert '--arg version "$EXPECTED_VERSION"' in workflow
+    assert ".version == $version" in workflow
+    assert 'version == "1.0.3"' not in workflow
+
+
 def test_public_adapter_scope_is_explicit():
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     skill = (SKILL / "SKILL.md").read_text(encoding="utf-8")
