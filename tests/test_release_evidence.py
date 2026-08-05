@@ -176,6 +176,14 @@ def test_evidence_boundaries_fail_closed_for_schema_path_hash_and_reload(
         )
 
 
+def _write_live_dependency(repository_root: Path, commit: str) -> None:
+    (repository_root / "pyproject.toml").write_text(
+        "[project.optional-dependencies]\n"
+        f'live = ["gepa[full] @ git+https://github.com/sh-patterson/gepa.git@{commit}"]\n',
+        encoding="utf-8",
+    )
+
+
 def test_provenance_reads_installed_manifest_and_commit_sources(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
