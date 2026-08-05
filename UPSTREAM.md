@@ -5,7 +5,7 @@ This repository adapts GEPA's `gepa-optimize-anything` skill for Codex.
 - Original upstream repository: https://github.com/gepa-ai/gepa
 - Pinned compatibility fork: https://github.com/sh-patterson/gepa
 - Upstream skill: `.claude/skills/gepa-optimize-anything`
-- Pinned commit: `3a6f93c5dd0beb68825973b3b2f2cae23060bbbb`
+- Pinned commit: `736739860458ff420066736e67c9910afcade9d7`
 - Upstream license: MIT
 - Upstream copyright: Copyright (c) 2025 Lakshya A Agrawal
 
@@ -23,11 +23,14 @@ known text-truncation defects repaired from the original release.
 
 ## AutoResearch repair in the pinned commit
 
-Pinned commit `3a6f93c5dd0beb68825973b3b2f2cae23060bbbb` adds the
-evaluation-session drain barrier, rejects late requests after close, derives the
-winner from completed evaluation receipts, and prevents proposal N+1 from
-starting before evaluation N feedback completes. The exact pinned checkout's
-focused AutoResearch and evaluation-server suite must remain green.
+Pinned commit `736739860458ff420066736e67c9910afcade9d7` is the current safe
+fork head for [gepa-ai/gepa#415](https://github.com/gepa-ai/gepa/pull/415),
+which remains open. It descends from the ComBEE runtime at
+`ba30ee24e8f63dfdb9e557ed8cfaaec7aa09a6df` and retains the evaluation-session drain barrier, late-request rejection, and derives the winner from completed evaluation receipts.
+It also retains proposal N+1 ordering repair. The earlier `3a6f93c5dd0beb68825973b3b2f2cae23060bbbb`
+commit is the historical adapter baseline, not the active dependency pin. The
+exact pinned checkout's focused AutoResearch and evaluation-server suite must
+remain green.
 
 That upstream lifecycle proof is necessary but not sufficient for an installed
 Codex release claim. The public phase certifier must also reconcile installed
