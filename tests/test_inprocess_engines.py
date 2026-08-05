@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from gepa.oa.engines.gepa import GepaEngine
+from gepa.strategies.proposal_sampling import PxNSampling
+from gepa.strategies.proposal_selection import AllImprovements
 import gepa.oa.engines.best_of_n as best_of_n
 from gepa.optimize_anything import OptimizeAnythingConfig, optimize_anything
 
@@ -94,3 +97,25 @@ def test_best_of_n_inprocess_engine_accepts_a_no_network_lm(
     assert result.metadata["n_samples"] == 3
     assert result.metadata["n_parse_failures"] == 0
     assert len(set(candidates)) == 3
+
+
+def test_native_px_n_and_selection_strategies_stay_in_engine_config() -> None:
+    sampling = PxNSampling(p=2, n=3)
+    selection = AllImprovements()
+
+    engine = GepaEngine(
+        OptimizeAnythingConfig(
+            engine="gepa",
+            engine_config={
+                "engine": {
+                    "sampling_strategy": sampling,
+                    "selection_strategy": selection,
+                    "seed": 0,
+                }
+            },
+        )
+    )
+
+    assert engine.gepa_config.engine.sampling_strategy is sampling
+    assert engine.gepa_config.engine.selection_strategy is selection
+    assert engine.gepa_config.engine.seed == 0

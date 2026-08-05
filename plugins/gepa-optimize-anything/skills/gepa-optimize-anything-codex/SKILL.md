@@ -123,7 +123,7 @@ even see it). See `references/api.md` for details and when to use each mode.
 
 ## Install
 ```bash
-pip install "gepa[full] @ git+https://github.com/sh-patterson/gepa.git@3a6f93c5dd0beb68825973b3b2f2cae23060bbbb"
+pip install "gepa[full] @ git+https://github.com/sh-patterson/gepa.git@736739860458ff420066736e67c9910afcade9d7"
 # [full] pulls cloudpickle — needed to pickle closure evaluators for
                            # parallel workers / opt-in evaluation caching; plain `pip install gepa`
                            # can fail there when your evaluator closes over data.
@@ -225,6 +225,8 @@ The example optimizes a system prompt for concreteness, but the **shape is ident
 candidate — swap `SEED` for a code file / config / etc. and have `evaluate` compile/run/measure it.
 ```python
 from gepa.optimize_anything import optimize_anything, OptimizeAnythingConfig
+from gepa.strategies.proposal_sampling import PxNSampling
+from gepa.strategies.proposal_selection import AllImprovements
 
 SEED = "You are an expert. Solve the task. Output only the final answer."
 
@@ -266,7 +268,12 @@ result = optimize_anything(
                 "reflection_lm_kwargs": {},
                 "reflection_minibatch_size": 5,
             },
-            "engine": {"max_workers": 32, "seed": 0},  # seed = reproducibility
+            "engine": {
+                "max_workers": 32,
+                "sampling_strategy": PxNSampling(p=2, n=3),
+                "selection_strategy": AllImprovements(),
+                "seed": 0,
+            },  # native GEPA strategies; defaults remain unchanged
         },
     ),
 )
@@ -279,6 +286,14 @@ print(
     result.metadata.get("baseline_test_score"),
 )
 ```
+
+`PxNSampling` and `AllImprovements` are native GEPA objects passed through
+`engine_config["engine"]`. They are opt-in upstream strategies, not adapter
+P/N configuration, and this adapter does not change their defaults. The pinned
+GEPA `ReflectionLM` path also supports a callable such as `CodexLM` that has no
+`batch_complete` method by making reflection calls sequentially. The pinned
+ComBEE object is available upstream, but this adapter's deterministic proof is
+limited to availability and sequential fallback, not parallel reflection.
 
 ## Standard workflow
 1. **Pick the mode** (single-task / multi-task / generalization) by which of `dataset`/`valset` you pass.

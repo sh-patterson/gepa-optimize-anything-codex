@@ -8,6 +8,12 @@ from pathlib import Path
 
 import pytest
 
+from gepa.proposer.reflective_mutation.combee import ComBEEReflectionLM
+from gepa.proposer.reflective_mutation.reflection_lm import (
+    ReflectionLM,
+    StatelessReflectionLM,
+)
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "plugins" / "gepa-optimize-anything" / "skills" / "gepa-optimize-anything-codex" / "scripts" / "codex_lm.py"
@@ -102,3 +108,44 @@ def test_public_config_fails_closed(tmp_path: Path, kwargs: dict[str, object]) -
     values.update(kwargs)
     with pytest.raises(ValueError):
         codex_lm.CodexLMConfig(**values)
+
+
+def test_public_lm_uses_gepa_sequential_reflection_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lm = codex_lm.CodexLM(_config(tmp_path), cwd=tmp_path, environment={})
+    assert not hasattr(lm, "batch_complete")
+
+    calls: list[str] = []
+
+    def fake_call(_self: object, prompt: str) -> str:
+        calls.append(prompt)
+        return "Here is the update:\n```\nY\n```"
+
+    monkeypatch.setattr(codex_lm.CodexLM, "__call__", fake_call)
+    reflector = StatelessReflectionLM(lm)
+    assert isinstance(reflector, ReflectionLM)
+
+    jobs = [
+        ({"a": "old0"}, {"a": [{"Feedback": "bad0"}]}, ["a"]),
+        ({"a": "old1"}, {"a": [{"Feedback": "bad1"}]}, ["a"]),
+    ]
+    results = reflector.reflect_many(jobs)
+
+    assert [proposal.new_texts for proposal, _ in results] == [
+        {"a": "Y"},
+        {"a": "Y"},
+    ]
+    assert len(calls) == 2
+    assert "old0" in calls[0]
+    assert "old1" in calls[1]
+
+    class NoopLM:
+        total_cost = 0.0
+
+        def __call__(self, _prompt: object) -> str:
+            raise AssertionError("ComBEE availability proof must not call the LM")
+
+    combee = ComBEEReflectionLM(NoopLM())
+    assert isinstance(combee, ReflectionLM)
+    assert callable(combee.reflect_many)

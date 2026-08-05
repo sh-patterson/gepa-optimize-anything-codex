@@ -5,6 +5,9 @@ The public entry point is `gepa.optimize_anything.optimize_anything`.
 ## Signature
 ```python
 from gepa.optimize_anything import optimize_anything, OptimizeAnythingConfig
+from gepa.strategies.proposal_sampling import PxNSampling
+from gepa.strategies.proposal_selection import AllImprovements
+
 
 result = optimize_anything(
     seed_candidate: str | None = None,   # starting text; None = seedless (engine bootstraps from objective/background)
@@ -121,6 +124,8 @@ engine_config = {
         "cache_evaluation": False,  # opt-in: cache identical (candidate, example) evals
         "capture_stdio": False,  # opt-in: route evaluator print() output into feedback
         "raise_on_exception": True,  # False → evaluator exceptions become score 0 + info["error"]
+        "sampling_strategy": PxNSampling(p=2, n=3),  # opt-in P x N proposals
+        "selection_strategy": AllImprovements(),  # accept every improvement
         # "write_agent_state": True,     # agent-readable iterations/ + pareto/ tree under run_dir
     },
     "tracking": {"use_wandb": True},  # -> TrackingConfig (see references/tracking.md)
@@ -134,6 +139,13 @@ The nested dataclasses live in `gepa.gepa_launcher` (`EngineConfig`, `Reflection
 `TrackingConfig`, `MergeConfig`, `RefinerConfig`); their knobs are documented in the GEPA guides —
 e.g. **candidate-selection**, **acceptance-criterion**, **batch-sampling**, **callbacks**,
 **cost-tracking**, **experiment-tracking** — see <https://gepa-ai.github.io/gepa/guides/>.
+
+`PxNSampling` and `AllImprovements` are upstream GEPA objects. Pass them under
+`engine_config["engine"]` only when opting in; the adapter does not add P/N
+settings. `ComBEEReflectionLM` and the `ReflectionLM` protocol are available
+from the pinned runtime. Because `CodexLM` has no `batch_complete`, GEPA uses
+its supported sequential reflection fallback. This adapter proves availability
+and sequential compatibility only, not parallel reflection.
 
 ### `autoresearch` — `engine_config` → `AutoResearchConfig`
 | key | default | meaning |
