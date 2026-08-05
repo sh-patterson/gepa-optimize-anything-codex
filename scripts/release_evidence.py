@@ -7,6 +7,7 @@ import math
 import os
 import subprocess
 import tempfile
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping
@@ -207,6 +208,40 @@ def git_commit(path: Path) -> str:
     raise RuntimeError(f"cannot resolve git commit for {path}")
 
 
+def _declared_vcs_commit(repository_root: Path, package: str) -> str:
+    try:
+        with (repository_root / "pyproject.toml").open("rb") as source:
+            pyproject = tomllib.load(source)
+        live_dependencies = pyproject["project"]["optional-dependencies"]["live"]
+    except (KeyError, OSError, TypeError, tomllib.TOMLDecodeError) as exc:
+        raise RuntimeError(f"cannot resolve declared {package} commit") from exc
+    if not isinstance(live_dependencies, list):
+        raise RuntimeError(f"cannot resolve declared {package} commit")
+
+    package_requirements: list[str] = []
+    for requirement in live_dependencies:
+        if not isinstance(requirement, str):
+            raise RuntimeError(f"cannot resolve declared {package} commit")
+        requirement_name = (
+            requirement.split("@", 1)[0].strip().split("[", 1)[0].strip()
+        )
+        if requirement_name.casefold() == package.casefold():
+            package_requirements.append(requirement)
+    if len(package_requirements) != 1:
+        raise RuntimeError(f"cannot resolve declared {package} commit")
+
+    requirement = package_requirements[0]
+    prefix, separator, commit = requirement.rpartition("@")
+    if (
+        not separator
+        or not prefix.casefold().startswith(f"{package}[full] @ git+https://".casefold())
+        or len(commit) != 40
+        or any(character not in "0123456789abcdef" for character in commit)
+    ):
+        raise RuntimeError(f"cannot resolve declared {package} commit")
+    return commit
+
+
 def installed_vcs_commit(package: str) -> str:
     raw = importlib.metadata.distribution(package).read_text("direct_url.json")
     try:
@@ -243,13 +278,20 @@ def installed_provenance(
         raise RuntimeError("installed plugin manifest is missing or invalid") from exc
     if not isinstance(plugin, dict) or plugin.get("version") != expected_version:
         raise RuntimeError("installed plugin version does not match the runner")
+    declared_commit = _declared_vcs_commit(repository_root, package)
+    installed_commit = installed_vcs_commit(package)
+    if installed_commit != declared_commit:
+        raise RuntimeError(
+            f"installed {package} commit {installed_commit} does not match "
+            f"declared live commit {declared_commit}"
+        )
     return {
         "installed_plugin": True,
         "skill_path": str(selected),
         "plugin_manifest": str(manifest),
         "plugin_version": expected_version,
         "repository_commit": git_commit(repository_root),
-        "gepa_commit": installed_vcs_commit(package),
+        "gepa_commit": installed_commit,
     }
 
 
