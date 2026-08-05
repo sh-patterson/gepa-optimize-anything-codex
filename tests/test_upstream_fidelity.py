@@ -6,11 +6,6 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).parents[1]
-PINNED_GEPA_COMMIT = "3a6f93c5dd0beb68825973b3b2f2cae23060bbbb"
-PINNED_GEPA_DEPENDENCY = (
-    "gepa[full] @ git+https://github.com/sh-patterson/gepa.git@"
-    f"{PINNED_GEPA_COMMIT}"
-)
 SKILL = (
     ROOT
     / "plugins"
@@ -18,6 +13,26 @@ SKILL = (
     / "skills"
     / "gepa-optimize-anything-codex"
 )
+
+
+def _declared_gepa_dependency() -> str:
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    live_dependencies = pyproject["project"]["optional-dependencies"]["live"]
+    assert isinstance(live_dependencies, list)
+    assert len(live_dependencies) == 1
+    dependency = live_dependencies[0]
+    assert isinstance(dependency, str)
+    return dependency
+
+
+def _declared_gepa_commit() -> str:
+    dependency = _declared_gepa_dependency()
+    prefix = "gepa[full] @ git+https://github.com/sh-patterson/gepa.git@"
+    assert dependency.startswith(prefix)
+    commit = dependency[len(prefix) :]
+    assert len(commit) == 40
+    assert all(character in "0123456789abcdef" for character in commit)
+    return commit
 
 PINNED_UPSTREAM_SHA256 = {
     "SKILL.md": "d2addb90007d93da8bd93c556940a89b686ae0de51f9f4d3ce47041d23aaa599",
@@ -34,9 +49,9 @@ PINNED_UPSTREAM_SHA256 = {
 }
 
 REVIEWED_LOCAL_SHA256 = {
-    "SKILL.md": "aa08541af1d8e97f34052ce48a74e892105f4909f9f82ded103073577b991063",
+    "SKILL.md": "0cb43f0ea394d1a02831ea054a46ca1c44bbf7f6cd4a313da14bfd10f0641951",
     "references/api.md": (
-        "dbea32c545a2df516ff00c3baaa3541ec6b5830a76444cbb60d8b26810d3de8c"
+        "7701b96b8f7d3aeea0b142231a04aff7419f9a18ddbaee7158f7846234823898"
     ),
     "references/gotchas.md": (
         "50f5d15347d9ed531c0f332c540a44279286b6aa433df34be624d200086c4daf"
@@ -92,20 +107,29 @@ def test_gepa_pin_is_consistent_across_install_paths() -> None:
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     live_dependencies = pyproject["project"]["optional-dependencies"]["live"]
     upstream = (ROOT / "UPSTREAM.md").read_text(encoding="utf-8")
+    plugin_upstream = (
+        ROOT / "plugins" / "gepa-optimize-anything" / "UPSTREAM.md"
+    ).read_text(encoding="utf-8")
     skill = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+    dependency = _declared_gepa_dependency()
+    commit = _declared_gepa_commit()
 
-    assert live_dependencies == [PINNED_GEPA_DEPENDENCY]
-    assert PINNED_GEPA_COMMIT in upstream
-    assert PINNED_GEPA_DEPENDENCY in skill
+    assert live_dependencies == [dependency]
+    assert f"Pinned commit: `{commit}`" in upstream
+    assert f"Pinned commit: `{commit}`" in plugin_upstream
+    assert dependency in skill
 
 
 def test_upstream_autoresearch_repair_gate_is_explicit() -> None:
     upstream = (ROOT / "UPSTREAM.md").read_text(encoding="utf-8")
 
+    commit = _declared_gepa_commit()
     assert "evaluation-session drain barrier" in upstream
     assert "completed evaluation receipts" in upstream
     assert "proposal N+1" in upstream
-    assert PINNED_GEPA_COMMIT in upstream
+    assert commit in upstream
+    assert "gepa-ai/gepa#415" in upstream
+    assert "ba30ee24e8f63dfdb9e557ed8cfaaec7aa09a6df" in upstream
 
 
 def test_upstream_copy_has_no_known_truncations() -> None:

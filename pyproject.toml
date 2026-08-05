@@ -12,7 +12,7 @@ dev = [
   "ruff>=0.11",
 ]
 live = [
-  "gepa[full] @ git+https://github.com/sh-patterson/gepa.git@3a6f93c5dd0beb68825973b3b2f2cae23060bbbb",
+  "gepa[full] @ git+https://github.com/sh-patterson/gepa.git@736739860458ff420066736e67c9910afcade9d7",
 ]
 [tool.pytest.ini_options]
 markers = [
