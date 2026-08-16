@@ -11,6 +11,12 @@ For a new release, run the certifier against the exact installed tag candidate
 and preserve its sanitized receipt in the repository before making the claim.
 The no-call checks below use fake processes only.
 
+The current native-runtime work is a post-1.1 release candidate. Its App
+Server/CLI contract, four-engine injection seams, and no-model Desktop auth
+probe are implemented, but no authorized live native certification has run.
+The older commands in the legacy section exercise the compatibility launcher;
+they cannot certify the new native runtime.
+
 ## Engine certification boundary
 
 `gepa` and `best_of_n` have narrow installed-plugin probe evidence. The pinned
@@ -48,6 +54,9 @@ adapter state for every run.
 ## No-call checks
 
 ```bash
+python "$GEPA_CODEX_SKILL_DIR/scripts/native_preflight.py" \
+  --evidence-dir /tmp/native-preflight \
+  --codex-home "$HOME/.codex"
 python "$GEPA_CODEX_SKILL_DIR/scripts/preflight.py" --engine autoresearch
 python "$GEPA_CODEX_SKILL_DIR/scripts/preflight.py" --engine meta_harness
 python -m pytest -q -m "not live"
@@ -58,6 +67,11 @@ python -m ruff check .
 
 Every command below can make a model call. Obtain fresh authorization first.
 Run them serially with zero retries.
+
+There is not yet a native live release receipt. Do not use the commands below
+to claim App Server, native `AgentRunner`, Desktop product fit, or USD-cost
+parity. They are retained as legacy regression exercises while the native
+certifier is built around `CodexRuntime` evidence.
 
 The paper-informed optimize-everything certifier is the closing release gate:
 
@@ -72,6 +86,8 @@ seeds a fresh AutoResearch process with the exact winner bytes. Its ceiling is
 four Luna/high optimizer calls, zero retries, and no judge calls. Equal
 evaluation counts are not a dollar-matched reproduction of the published
 experiment.
+
+### Legacy compatibility exercises
 
 Prove the installed compatibility adapter independently before exercising any
 optimizer or evaluator:

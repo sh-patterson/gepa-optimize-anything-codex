@@ -59,6 +59,9 @@ jobs:
           test -f "$INSTALLED_PLUGIN/LICENSE"
           test -f "$INSTALLED_PLUGIN/UPSTREAM.md"
           test -f "$INSTALLED_SKILL/SKILL.md"
+          test -f "$INSTALLED_SKILL/scripts/codex_runtime.py"
+          test -f "$INSTALLED_SKILL/scripts/codex_agent_runner.py"
+          test -f "$INSTALLED_SKILL/scripts/native_preflight.py"
           for source in "$CLEAN_ROOT/marketplace" "$GITHUB_WORKSPACE"; do
             source="$(readlink -f "$source")"
             case "$INSTALLED_SKILL" in "$source"/*) exit 1 ;; esac
@@ -75,6 +78,9 @@ jobs:
         env:
           CODEX_API_KEY: ci-no-call-key
         run: |
+          "$CLEAN_VENV/bin/python" -c "import openai_codex"
+          "$CLEAN_VENV/bin/python" "$GEPA_CODEX_SKILL_DIR/scripts/native_preflight.py" --help
+          # Legacy bridge coverage remains until the native live release gate replaces it.
           "$CLEAN_VENV/bin/python" "$GEPA_CODEX_SKILL_DIR/scripts/preflight.py" --engine autoresearch
           "$CLEAN_VENV/bin/python" "$GEPA_CODEX_SKILL_DIR/scripts/preflight.py" --engine meta_harness
       - name: run installed free integrations
