@@ -2,21 +2,17 @@
 
 from __future__ import annotations
 
-import os
-import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Literal, Mapping
 from uuid import uuid4
 
-from codex_cli_backend import CodexCliBackend
 from codex_runtime import (
     CodexRuntime,
-    EvidenceStore,
     InvocationResult,
     InvocationSpec,
-    SdkAppServerBackend,
+    create_runtime,
 )
 
 TARGET_MODEL = "gpt-5.6-luna"
@@ -88,7 +84,13 @@ class CodexLM:
             raise ValueError("CodexLM cwd must be an existing directory")
         self.environment = dict(environment or {})
         self._claim_evidence_root()
-        self.runtime = runtime or _build_runtime(config, self.environment)
+        self.runtime = runtime or create_runtime(
+            evidence_dir=config.evidence_dir,
+            codex_home=config.codex_home,
+            cli_executable=config.cli_executable,
+            environment=self.environment,
+            allow_cli_fallback=config.allow_cli_fallback,
+        )
         self.last_result: CodexLMResult | None = None
         self.total_cost: None = None
         self.cost_status: Literal["unknown"] = "unknown"
@@ -153,38 +155,6 @@ class CodexLM:
                 file.write(uuid4().hex)
         except FileExistsError as exc:
             raise RuntimeError("CodexLM evidence_dir has already been used") from exc
-
-
-def _build_runtime(
-    config: CodexLMConfig, environment: Mapping[str, str]
-) -> CodexRuntime:
-    evidence = EvidenceStore(config.evidence_dir)
-    primary = SdkAppServerBackend(codex_home=config.codex_home)
-    fallback = None
-    if config.allow_cli_fallback:
-        executable = config.cli_executable or _find_codex_cli()
-        if executable is not None:
-            fallback = CodexCliBackend(
-                executable=executable,
-                codex_home=config.codex_home,
-                environment=environment,
-            )
-    return CodexRuntime(evidence=evidence, primary=primary, fallback=fallback)
-
-
-def _find_codex_cli() -> Path | None:
-    discovered = shutil.which("codex")
-    if discovered:
-        return Path(discovered).resolve()
-    try:
-        import codex_cli_bin
-
-        package = Path(codex_cli_bin.__file__).resolve().parent
-        name = "codex.exe" if os.name == "nt" else "codex"
-        candidate = package / "bin" / name
-        return candidate if candidate.is_file() else None
-    except ImportError:
-        return None
 
 
 def _usage_mapping(result: InvocationResult) -> dict[str, int]:

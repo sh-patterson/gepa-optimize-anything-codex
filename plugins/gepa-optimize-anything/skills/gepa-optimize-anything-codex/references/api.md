@@ -138,34 +138,38 @@ e.g. **candidate-selection**, **acceptance-criterion**, **batch-sampling**, **ca
 ### `autoresearch` — `engine_config` → `AutoResearchConfig`
 | key | default | meaning |
 |---|---|---|
-| `model` | `"claude-sonnet-4-6"` | Claude model id (pass `"sonnet"`/`"opus"` to track the current default). |
-| `ralph` | `True` | keep resuming one Claude session (`claude --resume`) while budget remains. |
+| `model` | upstream default | set `"gpt-5.6-luna"` for the Codex runner. |
+| `ralph` | `True` | keep resuming one provider-scoped agent continuation while eval progress continues. |
 | `max_no_eval_seconds` | `None` | kill the subprocess after this long with no eval call. |
 | `handoffs` | `None` | prior-stage artifacts for sequential compositions (materialized under `handoff/`). |
 | `effort` | `None` | `claude --effort` value. |
 | `max_thinking_tokens` | `None` | fixed thinking-token budget (`MAX_THINKING_TOKENS`). |
+| `agent_runner` | `None` | provider-neutral workspace runner; pass `CodexAgentRunner` for the native path. |
+| `agent_timeout_seconds` | `600` | terminal timeout for each agent invocation. |
 
 The engine lays out a work dir (`program.md`, `candidate.txt`, `best_candidate.txt`, `eval.sh`) and
-launches `claude --print`; `eval.sh` POSTs candidates to the eval server, which enforces the
+invokes the injected workspace runner; `eval.sh` POSTs candidates to the eval server, which enforces the
 evaluation budget server-side (HTTP 429 on exhaustion). In this Codex port, `max_token_cost` is
 rejected before launch; bound agentic work with `max_evals`, `max_iterations`,
-`max_candidates_per_iter`, `stop_at_score`, and the adapter invocation cap. Train and val are
+`max_candidates_per_iter`, `stop_at_score`, and `agent_timeout_seconds`. Train and val are
 presented to the agent as one combined pool; the test set is unreachable over HTTP.
 
 ### `meta_harness` — `engine_config` → `MetaHarnessConfig`
 | key | default | meaning |
 |---|---|---|
-| `model` | `"claude-sonnet-4-6"` | proposer model id. |
+| `model` | upstream default | set `"gpt-5.6-luna"` for the Codex runner. |
 | `max_iterations` | `None` | hard cap on proposer sessions; `None` = until budget. |
 | `max_candidates_per_iter` | `3` | upper bound on candidates proposed per iteration. |
 | `effort` | `None` | `claude --effort` value. |
 | `max_thinking_tokens` | `None` | fixed thinking-token budget. |
+| `agent_runner` | `None` | provider-neutral workspace runner; pass `CodexAgentRunner` for the native path. |
+| `agent_timeout_seconds` | `600` | terminal timeout for each isolated proposal invocation. |
 
-Each iteration the proposer subprocess reads the frontier + history state files, writes
+Each iteration the injected proposer reads the frontier + history state files, writes
 `pending_eval.json` with 1+ candidates, and the engine benchmarks each through the eval server.
 Callers must explicitly set Codex-backed `max_evals=10`, `max_iterations=3`, and
-`max_candidates_per_iter=3`. The adapter alone enforces a default of four atomic starts per state
-directory, including one retry only when Codex is known not to have started.
+`max_candidates_per_iter=3`, plus an explicit agent timeout. The runtime records one
+exclusive claim and one terminal receipt for each isolated iteration.
 
 ### `best_of_n` (baseline) — `engine_config` → `BestOfNConfig`
 Deliberately naive: each sample is one independent LLM call — no feedback, no history, no

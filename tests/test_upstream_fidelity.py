@@ -19,8 +19,13 @@ def _declared_gepa_dependency() -> str:
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     live_dependencies = pyproject["project"]["optional-dependencies"]["live"]
     assert isinstance(live_dependencies, list)
-    assert len(live_dependencies) == 1
-    dependency = live_dependencies[0]
+    matches = [
+        dependency
+        for dependency in live_dependencies
+        if isinstance(dependency, str) and dependency.startswith("gepa[full] @ ")
+    ]
+    assert len(matches) == 1
+    dependency = matches[0]
     assert isinstance(dependency, str)
     return dependency
 
@@ -49,12 +54,12 @@ PINNED_UPSTREAM_SHA256 = {
 }
 
 REVIEWED_LOCAL_SHA256 = {
-    "SKILL.md": "0cb43f0ea394d1a02831ea054a46ca1c44bbf7f6cd4a313da14bfd10f0641951",
+    "SKILL.md": "0f8af8d56d3f9aa3d08a44f628629efd5804cd56009896432e8e43a983fb0b78",
     "references/api.md": (
-        "7701b96b8f7d3aeea0b142231a04aff7419f9a18ddbaee7158f7846234823898"
+        "9d0729217c51313d6173e57abce2d46b65f2ec31e3c2baba6575687ec5d98f48"
     ),
     "references/gotchas.md": (
-        "50f5d15347d9ed531c0f332c540a44279286b6aa433df34be624d200086c4daf"
+        "a34e985810f6d837aeb1c70e392bdc91378d8c243e30945a579f3a5df949aada"
     ),
     "references/tracking.md": PINNED_UPSTREAM_SHA256["references/tracking.md"],
     "references/writing_evaluators.md": PINNED_UPSTREAM_SHA256[

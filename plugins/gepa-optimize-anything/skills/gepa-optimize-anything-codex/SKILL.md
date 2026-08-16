@@ -17,20 +17,19 @@ For every `autoresearch` or `meta_harness` run:
 
 1. Resolve `SKILL_DIR` to the absolute directory containing this `SKILL.md`. Use the installed skill path supplied by Codex. Do not ask the user to find the plugin cache.
 2. Install pinned GEPA if the active Python environment does not already provide it.
-3. Run `npm install --prefix "$HOME/.local" @openai/codex@0.146.0` and prepend `"$HOME/.local/node_modules/.bin"` to `PATH`.
-4. Stage the adapter with `RUNTIME_BIN="$(python "$SKILL_DIR/scripts/sandbox_runtime.py" stage)"`.
-5. Unless `CODEX_API_KEY` is set, run `python "$SKILL_DIR/scripts/sandbox_runtime.py" login` once to authenticate the isolated runtime through ChatGPT.
-6. Prepend `RUNTIME_BIN` to `PATH`. Set `CODEX_HOME="$HOME/.cache/gepa-optimize-anything-codex/codex"` and a unique `CODEX_ADAPTER_STATE_DIR` beneath `~/.cache/gepa-optimize-anything-codex/runs`.
-7. Run `"$SKILL_DIR/scripts/preflight.py" --engine <engine>`.
-8. Launch the user's Python program with `sandbox=True`.
+3. Create one absolute evidence directory for the run.
+4. Run `python "$SKILL_DIR/scripts/native_preflight.py" --evidence-dir "$EVIDENCE_DIR" --codex-home "$HOME/.codex"`.
+5. Build one `CodexRuntime` with `create_runtime(...)` and one `CodexAgentRunner` over it.
+6. Put that runner in `engine_config["agent_runner"]`. Pin `model="gpt-5.6-luna"`, `effort="high"`, and an explicit `agent_timeout_seconds`.
+7. Launch the user's program with explicit evaluation and iteration bounds. Close the runtime when the run ends.
 
-## Codex adapter limits
+## Codex runtime limits
 
-The agentic adapter supports Linux only. Keep GEPA's default `sandbox=True`. Staging puts the adapter under Bubblewrap's read-only `~/.local` bind. Keep `CODEX_HOME` and adapter state under its writable `~/.cache` bind. Authenticate that isolated home with `sandbox_runtime.py login`, or use `CODEX_API_KEY`. The jail does not expose the normal `~/.codex` login directory. An explicit `--no-sandbox` preflight is the opt-out path for hosts that intentionally use the normal Codex login.
+The stable `openai-codex` SDK and local App Server are primary. Direct `codex exec --json` is a pre-start fallback behind the same contract. A managed Desktop task may need explicit access to the existing Codex home because App Server owns state there. Both backends use explicit deny-all approvals, disable web search and workspace network access, and reject full-access sandbox requests.
 
-The adapter maps the pinned GEPA default `claude-sonnet-4-6` to `gpt-5.6-luna`. It rejects other source models before starting Codex. Sandboxed runs require either the staged ChatGPT login or `CODEX_API_KEY`; the adapter preserves the existing `CODEX_HOME` and never copies authentication into its session-state directory. Unsandboxed runs may use an existing normal `codex login`. `OPENAI_API_KEY` remains available to GEPA's in-process models but is never translated into Codex authentication.
+The plugin supplies the Codex model directly; it does not translate a Claude model alias. `CodexLM` serves GEPA and Best-of-N. `CodexAgentRunner` serves AutoResearch and MetaHarness, preserving one Codex thread across AutoResearch continuation and using isolated threads for MetaHarness.
 
-Do not set `max_token_cost` with `autoresearch` or `meta_harness`. GEPA passes it as `--max-budget-usd`; the adapter rejects that flag before spawning Codex because it cannot enforce a USD cap. Callers must explicitly set `max_evals=10` and, for `meta_harness`, `max_iterations=3` plus `max_candidates_per_iter=3`. The adapter alone enforces a default of four atomic starts per unique state directory. It retries once only when Codex is known not to have started, and that retry consumes an invocation slot. It never retries an ambiguous, usage-bearing, or completed call. Set `CODEX_ADAPTER_MAX_INVOCATIONS` to a different positive integer to override the atomic start cap; a claimed slot remains consumed after failure. Set `stop_at_score` whenever the metric has a known ceiling. A host timeout is an optional emergency stop, not a default budget. `total_cost_usd` is a conservative standard-tier estimate from observed tokens, not provider billing. The adapter accepts pinned GEPA's exact web-tool denial, disables Codex's standalone web search, and rejects unknown policy values plus `--settings` before Codex starts. Shell network access remains available, matching GEPA's unsandboxed agent path.
+Do not set `max_token_cost` with `autoresearch` or `meta_harness`. Codex Desktop reports token usage but not a provider USD bill, so receipts keep `cost_status="unknown"`. Callers must explicitly set `max_evals=10` and, for `meta_harness`, `max_iterations=3` plus `max_candidates_per_iter=3`. Set `stop_at_score` whenever the metric has a known ceiling. Every invocation has a host timeout. AutoResearch stops continuation when an iteration makes no evaluation progress. The runtime never retries an ambiguous, usage-bearing, or completed call.
 
 **Naming, precisely.** `optimize_anything` is the tool: a general API for optimizing text
 artifacts. **GEPA** is one specific optimizer behind it — reflective evolutionary search, the
@@ -52,19 +51,19 @@ argument** — and the same code runs under any of them:
 - **`gepa`** — the GEPA optimizer: reflective evolutionary search, in-process (an LLM reflects on
   feedback and mutates candidates; keeps a Pareto frontier). The default; strongest when feedback
   is rich.
-- **`autoresearch`** — an agentic optimizer: one Codex subprocess iterates like a researcher in
+- **`autoresearch`** — an agentic optimizer: one persistent Codex thread iterates like a researcher in
   a work dir, scoring candidates through an HTTP eval server.
-- **`meta_harness`** — an agentic proposer (Codex subprocess) that reads the frontier/history each
+- **`meta_harness`** — an agentic proposer (fresh isolated Codex thread) that reads the frontier/history each
   iteration and writes new candidates for the engine to benchmark.
 
 (There is also a `best_of_n` engine — sample N independent candidates, keep the best. It is
 deliberately naive: use it as a **baseline** to compare an optimizer against, not as the optimizer.)
 
-This plugin translates the Linux-only `autoresearch` and `meta_harness`
-subprocess boundary to Codex. `scripts/codex_lm.py` exports `CodexLM`, the
-installed callable for the in-process `gepa` and `best_of_n` engines. It pins
-`gpt-5.6-luna` with `high` reasoning and requires a fresh state and session
-directory for each engine. macOS agentic execution is unsupported.
+This plugin injects one provider-neutral runtime into all four engines.
+`scripts/codex_lm.py` exports `CodexLM` for `gepa` and `best_of_n`;
+`scripts/codex_agent_runner.py` exports the workspace-agent runner for
+`autoresearch` and `meta_harness`. It pins `gpt-5.6-luna` with `high` reasoning
+and records the selected provider on every invocation.
 
 The `gepa` and `best_of_n` paths have narrow probe evidence. The pinned GEPA
 commit's tests verify AutoResearch's evaluation-session drain barrier,
@@ -123,7 +122,7 @@ even see it). See `references/api.md` for details and when to use each mode.
 
 ## Install
 ```bash
-pip install "gepa[full] @ git+https://github.com/sh-patterson/gepa.git@3a6f93c5dd0beb68825973b3b2f2cae23060bbbb"
+pip install "gepa[full] @ git+https://github.com/sh-patterson/gepa.git@74b45c77edb4051ab121ae6b35e6ba9dde28613f"
 # [full] pulls cloudpickle — needed to pickle closure evaluators for
                            # parallel workers / opt-in evaluation caching; plain `pip install gepa`
                            # can fail there when your evaluator closes over data.

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import time
 from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError
 from dataclasses import asdict, dataclass
@@ -189,6 +191,10 @@ class CodexRuntime:
         self._probe: BackendProbe | None = None
         self._fallback_reason: str | None = None
 
+    @property
+    def fallback_reason(self) -> str | None:
+        return self._fallback_reason
+
     def prepare(self) -> BackendProbe:
         if self._probe is not None:
             return self._probe
@@ -263,6 +269,34 @@ class CodexRuntime:
 
     def __exit__(self, *_args: object) -> None:
         self.close()
+
+
+def create_runtime(
+    *,
+    evidence_dir: Path,
+    codex_home: Path | None = None,
+    cli_executable: Path | None = None,
+    environment: Mapping[str, str] | None = None,
+    allow_cli_fallback: bool = True,
+) -> CodexRuntime:
+    """Build the supported App Server primary and optional direct CLI fallback."""
+    primary = SdkAppServerBackend(codex_home=codex_home)
+    fallback = None
+    if allow_cli_fallback:
+        executable = cli_executable or _find_codex_cli()
+        if executable is not None:
+            from codex_cli_backend import CodexCliBackend
+
+            fallback = CodexCliBackend(
+                executable=executable,
+                codex_home=codex_home,
+                environment=environment,
+            )
+    return CodexRuntime(
+        evidence=EvidenceStore(evidence_dir.resolve()),
+        primary=primary,
+        fallback=fallback,
+    )
 
 
 class SdkAppServerBackend:
@@ -441,6 +475,21 @@ def _auth_mode(account_response: object) -> str:
     if "bedrock" in name:
         return "amazon_bedrock"
     return "managed"
+
+
+def _find_codex_cli() -> Path | None:
+    discovered = shutil.which("codex")
+    if discovered:
+        return Path(discovered).resolve()
+    try:
+        import codex_cli_bin
+
+        package = Path(codex_cli_bin.__file__).resolve().parent
+        name = "codex.exe" if os.name == "nt" else "codex"
+        candidate = package / "bin" / name
+        return candidate if candidate.is_file() else None
+    except ImportError:
+        return None
 
 
 def _safe_reason(reason: str) -> str:

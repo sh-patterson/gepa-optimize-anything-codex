@@ -26,6 +26,8 @@ def test_skill_has_required_files_and_local_links():
     assert (SKILL / "scripts" / "codex_runtime.py").is_file()
     assert (SKILL / "scripts" / "canary_contract.py").is_file()
     assert (SKILL / "scripts" / "al_canary_adapter.py").is_file()
+    assert (SKILL / "scripts" / "codex_agent_runner.py").is_file()
+    assert (SKILL / "scripts" / "native_preflight.py").is_file()
     assert (SKILL / "scripts" / "preflight.py").is_file()
     for name in (
         "api.md",
@@ -85,7 +87,7 @@ def test_package_and_plugin_versions_match():
     assert pyproject["tool"]["setuptools"]["packages"] == []
 
 
-def test_codex_agentic_caller_limits_and_adapter_default_are_distinct():
+def test_codex_agentic_caller_limits_and_runtime_guards_are_explicit():
     skill = (SKILL / "SKILL.md").read_text(encoding="utf-8")
     api = (SKILL / "references" / "api.md").read_text(encoding="utf-8")
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
@@ -95,23 +97,23 @@ def test_codex_agentic_caller_limits_and_adapter_default_are_distinct():
         assert "max_evals=10" in document
         assert "max_iterations=3" in document
         assert "max_candidates_per_iter=3" in document
-        assert "four atomic starts" in document
+        assert "stop_at_score" in document
+    assert "agent_timeout_seconds" in skill
+    assert "no evaluation progress" in skill
+    assert 'cost_status="unknown"' in skill
 
 
-def test_supported_codex_cli_version_is_pinned_consistently():
-    expected_install = 'npm install --prefix "$HOME/.local" @openai/codex@0.146.0'
-    runtime = (
-        SKILL / "scripts" / "sandbox_runtime.py"
-    ).read_text(encoding="utf-8")
-    workflow = (ROOT / ".github" / "workflows" / "verify.yml").read_text(
-        encoding="utf-8"
-    )
+def test_supported_codex_sdk_version_is_pinned_consistently():
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    live = pyproject["project"]["optional-dependencies"]["live"]
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    runtime = (SKILL / "references" / "runtime.md").read_text(encoding="utf-8")
 
-    assert expected_install in (ROOT / "README.md").read_text(encoding="utf-8")
-    assert expected_install in (SKILL / "SKILL.md").read_text(encoding="utf-8")
-    assert expected_install in runtime
-    assert "@openai/codex@0.146.0" in workflow
-    assert 'grep -F "0.146.0"' in workflow
+    assert "openai-codex==0.144.4" in live
+    assert "openai-codex==0.144.4" in readme
+    assert "openai-codex" in runtime
+    assert "native_preflight.py" in readme
+    assert "native_preflight.py" in (SKILL / "SKILL.md").read_text(encoding="utf-8")
 
 
 def test_clean_install_derives_expected_plugin_version():
@@ -163,9 +165,10 @@ def test_engine_support_matrix_separates_pinned_and_installed_evidence():
     gotchas = (SKILL / "references" / "gotchas.md").read_text(encoding="utf-8")
     release = (ROOT / "release" / "README.md").read_text(encoding="utf-8")
 
-    for document in (readme, runtime, gotchas, release):
+    for document in (readme, gotchas, release):
         assert "receipt-derived" in document
         assert "winner" in document
+    assert "terminal receipt" in runtime
     assert "full three-engine" in readme
 
 

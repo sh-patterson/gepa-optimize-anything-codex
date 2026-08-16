@@ -43,20 +43,17 @@ block, and old-API keys (`claude_code_agent`, top-level `reflection_lm_kwargs`, 
 `background` inside `engine_config`) now crash. See `api.md` for each backend's valid keys.
 
 ## 6. Agentic backends have launch-time prerequisites
-`autoresearch` and `meta_harness` need the staged Codex runtime. A missing
-runtime, Codex CLI, `bwrap`, `jq`, or sandbox authentication fails preflight
-before the optimizer starts. An explicit `--no-sandbox` run is unconfined
-(loud warning). Run
-`python "$SKILL_DIR/scripts/preflight.py" --engine <engine>` first either way.
-See `runtime.md` for the internal process contract.
+`autoresearch` and `meta_harness` need a `CodexAgentRunner` in their
+`engine_config`. A missing SDK/App Server, fallback CLI, or Codex-managed login
+fails the no-model readiness probe before the optimizer starts. Run
+`python "$SKILL_DIR/scripts/native_preflight.py" --evidence-dir "$EVIDENCE_DIR"`
+first. See `runtime.md` for the internal contract.
 
 ## 7. Give runs a real stop condition (`stop_at_score` / bounded work)
 
-Sandboxed agentic runs require either `CODEX_API_KEY` or a ChatGPT login created
-with `sandbox_runtime.py login` in the isolated runtime home. A normal
-`~/.codex` login remains available only to explicit `--no-sandbox` runs.
-`OPENAI_API_KEY` is reserved for GEPA's in-process models and is not translated
-into Codex authentication.
+Native agentic runs use Codex-managed authentication through App Server. The
+plugin does not copy credentials into run state. The Desktop task may need
+explicit access to its existing Codex home because App Server owns state there.
 `max_evals` caps eval calls, but two situations still burn money or time past the point of useful
 work:
 - **The metric has a ceiling** and a candidate reaches it — without `stop_at_score` the run keeps
@@ -68,12 +65,11 @@ work:
   times out, still spending proposer-LLM tokens. With caching on, `stop_at_score` and/or a compatible
   cost or wall-clock bound are mandatory.
 This Codex adapter rejects agentic `max_token_cost` because it cannot enforce GEPA's
-`--max-budget-usd` contract. Callers must explicitly set `max_evals=10` for Codex agentic runs;
-for `meta_harness`, also set `max_iterations=3` and `max_candidates_per_iter=3`. The adapter alone
-enforces a default of four atomic starts per state directory and retries once only when Codex is
-known not to have started. The retry consumes a start; ambiguous or usage-bearing calls are never
-retried. Use an account spend
-limit as a secondary backstop. A host timeout is optional rather than the default work budget.
+USD contract. Callers must explicitly set `max_evals=10` for Codex agentic runs;
+for `meta_harness`, also set `max_iterations=3` and `max_candidates_per_iter=3`.
+Set `agent_timeout_seconds` and `stop_at_score`; AutoResearch continuation stops
+when an iteration makes no evaluation progress. Ambiguous or usage-bearing
+calls are never retried. Use an account spend limit as a secondary backstop.
 
 ## 8. Pick the right mode
 The mode is implicit in which sets you pass (`api.md`): no `dataset`/`valset` → single-task;

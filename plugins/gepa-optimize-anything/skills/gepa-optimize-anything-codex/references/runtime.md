@@ -1,50 +1,98 @@
-# Codex agentic runtime
+# Codex-native runtime
 
-GEPA currently starts its agentic backends through an internal command named
-`claude`. The staged launcher implements that narrow process contract with
-`codex exec`. It is an implementation detail, not a user-facing model API.
+The supported runtime uses the stable `openai-codex` Python SDK and local
+Codex App Server. Direct `codex exec --json` is a narrow fallback behind the
+same typed interface. Engine code never builds either transport protocol.
 
-## Stable installation
+```text
+GEPA / Best-of-N -> CodexLM ---------+
+                                      +-> CodexRuntime -> App Server
+AutoResearch / MetaHarness -> AgentRunner                  -> CLI fallback
+```
 
-`sandbox_runtime.py stage` copies the launcher and adapter into
-`~/.local/share/gepa-optimize-anything-codex/bin` and creates the isolated
-Codex home at `~/.cache/gepa-optimize-anything-codex/codex`. Stage is
-idempotent and creates no per-run state.
+`CodexRuntime` selects one provider during `prepare()` and freezes that choice.
+Fallback is allowed only when App Server is unavailable before an invocation
+starts. It never retries an ambiguous, usage-bearing, or completed turn on a
+different provider.
 
-`sandbox_runtime.py login` authenticates that isolated Codex home through
-ChatGPT. `CODEX_API_KEY` is the alternative. `OPENAI_API_KEY` remains reserved
-for GEPA's in-process model interface.
+## Desktop readiness
 
-## Per-run state
+Install the repository's `live` extra, then run the no-model probe:
 
-Give every agentic run a unique `CODEX_ADAPTER_STATE_DIR` beneath
-`~/.cache/gepa-optimize-anything-codex/runs`. The adapter writes metadata-only
-invocation records and session mappings there. It does not copy authentication
-into run state.
+```powershell
+python "$SKILL_DIR/scripts/native_preflight.py" `
+  --evidence-dir "$RUN_DIR/runtime-evidence" `
+  --codex-home "$HOME/.codex"
+```
 
-`sandbox_runtime.py probe` creates temporary run state beneath the same root,
-enters GEPA's Bubblewrap jail, verifies the staged launcher, imports the
-adapter, checks Codex, confirms authentication, and proves both cache
-directories writable. The temporary state disappears after the probe.
+The report names the selected provider, runtime version, and sanitized auth
+mode. `provider_call_made` remains false: account and version checks do not
+start a model turn. A managed Codex task may need explicit read/write access to
+the existing Codex home because App Server owns state there.
 
-## Limits
+## Engine integration
 
-The supported agentic path uses Linux and `sandbox=True`. Preflight validates
-Bubblewrap, Codex, authentication, cache paths, adapter limits, and the probe.
-`--no-sandbox` is an explicit opt-out.
+- `gepa` and `best_of_n` receive `scripts/codex_lm.py`, a callable over the
+  native runtime.
+- `autoresearch` receives `scripts/codex_agent_runner.py` and maps its Ralph
+  continuation identity to exactly one Codex thread.
+- `meta_harness` receives the same runner with a fresh continuation identity
+  per proposal iteration.
 
-The adapter rejects agentic `max_token_cost` before starting Codex. Codex does
-not provide the provider-enforced per-invocation USD ceiling required by that
-flag. Bound work with evaluations, engine iterations, adapter starts, and
-`stop_at_score`. Journaled usage supports a labeled token-derived estimate
-only.
+The pinned GEPA fork owns only the provider-neutral `AgentRunner` request and
+result types. It does not import the plugin or know about App Server, the Codex
+CLI, authentication, or receipt layout.
 
-## Engine evidence boundary
+```python
+from codex_agent_runner import CodexAgentRunner
+from codex_runtime import create_runtime
 
-`gepa` and `best_of_n` have narrow probe evidence through the installed
-`CodexLM` callable. The exact pinned GEPA checkout's tests verify
-AutoResearch's evaluation-session drain barrier, receipt-derived winner, and
-feedback ordering. A completed adapter JSONL alone still proves only the outer
-Codex process. Installed AutoResearch and MetaHarness require branch receipts,
-and the full method requires a conserved Phase 1 winner in a fresh
-AutoResearch continuation.
+runtime = create_runtime(
+    evidence_dir=(run_dir / "runtime-evidence").resolve(),
+    codex_home=(Path.home() / ".codex").resolve(),
+)
+runner = CodexAgentRunner(runtime)
+
+config = OptimizeAnythingConfig(
+    engine="autoresearch",
+    max_evals=10,
+    run_dir=str(run_dir / "work"),
+    output_dir=run_dir / "evaluations",
+    engine_config={
+        "model": "gpt-5.6-luna",
+        "effort": "high",
+        "agent_runner": runner,
+        "agent_timeout_seconds": 600,
+    },
+)
+```
+
+Use the same runner for MetaHarness, with `max_iterations=3` and
+`max_candidates_per_iter=3`. Close `runtime` after the optimizer returns.
+
+## Safety and custody
+
+Every invocation explicitly uses `ApprovalMode.deny_all`. Supported sandboxes
+are `read-only` and `workspace-write`; full access is rejected at the typed
+boundary. Web search and workspace network access are disabled in the Codex
+configuration. App Server and CLI backends emit the same immutable invocation
+record, with one exclusive claim and one terminal receipt per invocation.
+
+Timeouts interrupt App Server turns or terminate the CLI process group. A turn
+that does not reach a terminal state after interruption is `ambiguous` and is
+never retried. AutoResearch also stops continuation when an iteration makes no
+evaluation progress.
+
+Codex reports tokens but not provider USD billing for a Desktop-authenticated
+turn. Receipts therefore set `cost_status="unknown"`; they do not invent a
+zero or estimated bill. Do not set agentic `max_token_cost`. Bound work with
+`max_evals`, `max_iterations`, `max_candidates_per_iter`, `stop_at_score`, and
+the per-agent timeout.
+
+## Legacy bridge
+
+The old `claude` compatibility launcher remains temporarily for historical
+release receipts and rollback. It is not the default native architecture.
+Delete it only after clean-install Desktop and authorized live parity evidence
+exists for all four engines and the native release certifier has replaced the
+legacy adapter evidence schema.

@@ -2,7 +2,9 @@
 
 This marketplace packages GEPA's `optimize_anything` skill for Codex. GEPA
 keeps ownership of candidates, evaluators, engines, and result objects. The
-plugin adds the Linux runtime needed for its two agentic engines to use Codex.
+plugin adds a Codex-native runtime shared by all four engines. The stable
+`openai-codex` SDK/App Server path is primary; direct Codex CLI JSONL is a
+pre-start fallback behind the same interface.
 
 ## Install
 
@@ -26,10 +28,10 @@ preflight, and inspect the result.
 
 | Engine | Execution | Model interface | Evidence |
 |---|---|---|---|
-| `gepa` | In process | Installed `CodexLM` | Narrow probe verified |
-| `best_of_n` | In process | Installed `CodexLM` | Narrow probe verified |
-| `autoresearch` | Codex subprocess | Installed Codex adapter | Historical external receipt; fresh rerun required |
-| `meta_harness` | Codex subprocess | Installed Codex adapter | Historical external receipt; fresh rerun required |
+| `gepa` | In process | Native `CodexLM` | Deterministic contract + no-model App Server probe |
+| `best_of_n` | In process | Native `CodexLM` | Deterministic contract + no-model App Server probe |
+| `autoresearch` | Workspace agent | Native `AgentRunner`, persistent Codex thread | Deterministic continuation/lifecycle contract |
+| `meta_harness` | Workspace agent | Native `AgentRunner`, isolated Codex threads | Deterministic isolation contract |
 
 `gepa` and `best_of_n` have narrow probe receipts. The pinned GEPA commit's
 AutoResearch tests verify its evaluation-session drain barrier, receipt-derived
@@ -41,7 +43,8 @@ this checkout, and it never claimed semantic quality, generalization, or a
 dollar-matched reproduction of the published Omni experiment.
 
 The installed `scripts/codex_lm.py` callable supplies Codex to the two
-in-process engines. It does not add a new optimizer.
+in-process engines. `scripts/codex_agent_runner.py` supplies the same runtime
+to the two workspace engines. Neither adds a new optimizer.
 
 Public deterministic phase certification passed historically for the full three-engine
 composition, but its row is only a historical audit pointer, not a receipt stored
@@ -51,41 +54,34 @@ and its hash is recorded in the audit log.
 
 ## Requirements
 
-Install the pinned GEPA dependency with the repository's `live` extra. The
-in-process engines also need the credentials required by their configured
-provider model.
+Install the repository's `live` extra. It pins the maintained GEPA fork and
+`openai-codex==0.144.4`. The native runtime reuses Codex-managed ChatGPT
+authentication; it never copies credentials into plugin evidence.
 
-Agentic runs need Linux, Bubblewrap, `jq`, and Codex CLI 0.146.0 installed at a
-Bubblewrap-visible path:
+Run the shipped no-model readiness probe before optimization:
 
 ```bash
-npm install --prefix "$HOME/.local" @openai/codex@0.146.0
-export PATH="$HOME/.local/node_modules/.bin:$PATH"
-python "$SKILL_DIR/scripts/sandbox_runtime.py" stage
+python "$SKILL_DIR/scripts/native_preflight.py" \
+  --evidence-dir "$RUN_DIR/runtime-evidence" \
+  --codex-home "$HOME/.codex"
 ```
 
-Use `sandbox_runtime.py login` once for an isolated ChatGPT login, or set
-`CODEX_API_KEY`. Set `CODEX_HOME` to
-`~/.cache/gepa-optimize-anything-codex/codex` and give each run a unique
-`CODEX_ADAPTER_STATE_DIR` beneath
-`~/.cache/gepa-optimize-anything-codex/runs`. Run
-`preflight.py --engine <engine>` before starting an agentic optimizer.
+The Codex Desktop task must be allowed to access its existing Codex home so App
+Server can read authentication and write its own state. If App Server is
+unavailable before the run starts, the bundled direct CLI backend may be
+selected and the fallback reason is recorded.
 
 ## Limits
 
-Do not set `max_token_cost` for `autoresearch` or `meta_harness`. The adapter
-rejects it before Codex starts because Codex cannot enforce GEPA's exact USD
-contract. Journaled token usage produces an estimate, not a provider billing
-receipt.
+Do not set `max_token_cost` for `autoresearch` or `meta_harness`. Codex Desktop
+reports token usage, not a provider USD receipt, so the native runtime records
+`cost_status="unknown"` and rejects dollar-budget claims.
 
 Callers must explicitly set `max_evals=10` for agentic engines and, for
-MetaHarness, `max_iterations=3` with `max_candidates_per_iter=3`. The adapter
-alone enforces a default of four atomic starts per state directory. It retries
-once only when Codex is known not to have started.
-Ambiguous, usage-bearing, and completed calls are never retried.
-
-`sandbox=True` is the supported Linux path. `--no-sandbox` remains an explicit
-preflight opt-out. macOS agentic execution is not supported.
+MetaHarness, `max_iterations=3` with `max_candidates_per_iter=3`. Set an agent
+timeout and `stop_at_score` where the evaluator has a known ceiling.
+Ambiguous, usage-bearing, and completed calls are never retried. AutoResearch
+continuation stops when an iteration makes no evaluation progress.
 
 ## Results
 
@@ -93,10 +89,9 @@ The winning artifact and score are available on GEPA's result object as
 `best_candidate` and `best_score`. GEPA writes engine work to `run_dir` and
 evaluation records plus summaries to `output_dir`.
 
-Agentic state contains metadata-only invocation records under
-`CODEX_ADAPTER_STATE_DIR/invocations/` and session mappings under
-`CODEX_ADAPTER_STATE_DIR/sessions/`. It stores no prompts, responses, or
-credentials.
+Native evidence contains metadata-only claims and terminal records under the
+chosen evidence directory. It stores no credentials and labels provider cost
+unknown when Codex does not report billing.
 
 Release certification commands and receipt checks live in
 [`release/README.md`](release/README.md). The full optimizer API, evaluator
