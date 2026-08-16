@@ -175,12 +175,14 @@ def _load_module(name: str, path: Path) -> Any:
 
 
 def stage_and_preflight(
-    skill: Path, engine: str, state_dir: Path
+    skill: Path, engine: str, state_dir: Path | None
 ) -> tuple[dict[str, str], dict[str, Any]]:
     runtime = _load_module(
         "release_dogfood_runtime", skill / "scripts" / "sandbox_runtime.py"
     )
     paths = runtime.stage_runtime(runtime.runtime_paths())
+    if state_dir is None:
+        state_dir = paths.runs_root / f"release-dogfood-{uuid.uuid4().hex}"
     state_dir = runtime.resolve_state_dir(paths, state_dir)
     probe = runtime.probe_runtime(paths, state_dir)
     if probe.returncode != 0:
@@ -331,15 +333,20 @@ def run_release(
     if root is None:
         root, state_dir = _new_paths(None)
     else:
-        state_dir = root / "adapter-state"
+        # ``root`` is an output/evidence directory and may be outside the
+        # runtime home. Keep adapter journals in the runtime-owned runs root;
+        # the public receipt still points at the requested output directory.
+        state_dir = None
     root.mkdir(parents=True, exist_ok=False)
     source: dict[str, Any] | None = None
     try:
         skill = installed_skill_path()
         skill_version = _project_version()
         provenance = installed_provenance(skill, REPOSITORY_ROOT, skill_version)
-        require_unique_state_dir(state_dir)
+        if state_dir is not None:
+            require_unique_state_dir(state_dir)
         environment, staged = stage_and_preflight(skill, engine, state_dir)
+        state_dir = Path(staged["state_dir"])
         import gepa
 
         plugin = skill.parents[1] / ".codex-plugin" / "plugin.json"

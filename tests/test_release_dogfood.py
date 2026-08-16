@@ -177,6 +177,86 @@ def test_stage_and_preflight_records_actual_staged_paths(
     assert evidence["probe_success"] is True
 
 
+def test_stage_and_preflight_allocates_state_below_runtime_runs_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class Paths:
+        runs_root = tmp_path / "runtime-runs"
+        stage_bin = tmp_path / "bin"
+        codex_home = tmp_path / "codex-home"
+        launcher = stage_bin / "claude"
+        adapter_module = stage_bin / "codex_claude_adapter.py"
+        codex = stage_bin / "codex"
+
+    class Runtime:
+        @staticmethod
+        def runtime_paths():
+            return Paths
+
+        @staticmethod
+        def stage_runtime(paths: type[Paths]) -> type[Paths]:
+            return paths
+
+        @staticmethod
+        def resolve_state_dir(paths: type[Paths], state_dir: Path) -> Path:
+            assert state_dir.parent == paths.runs_root
+            return state_dir
+
+        @staticmethod
+        def probe_runtime(_paths: type[Paths], _state_dir: Path):
+            return type("Probe", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+        @staticmethod
+        def runtime_environment(_paths: type[Paths], state_dir: Path) -> dict[str, str]:
+            return {"CODEX_ADAPTER_STATE_DIR": str(state_dir)}
+
+    monkeypatch.setattr(release_dogfood, "_load_module", lambda _name, _path: Runtime)
+    monkeypatch.setattr(
+        release_dogfood.subprocess,
+        "run",
+        lambda *args, **kwargs: type(
+            "Run", (), {"returncode": 0, "stdout": "", "stderr": ""}
+        )(),
+    )
+
+    environment, evidence = release_dogfood.stage_and_preflight(
+        tmp_path / "output", "autoresearch", None
+    )
+
+    state_dir = Path(evidence["state_dir"])
+    assert state_dir.parent == Paths.runs_root
+    assert Path(environment["CODEX_ADAPTER_STATE_DIR"]) == state_dir
+
+
+def test_external_release_output_does_not_become_adapter_state_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    skill = _installed_skill(tmp_path)
+    monkeypatch.setenv("GEPA_CODEX_SKILL_DIR", str(skill))
+    monkeypatch.setattr(release_dogfood, "_project_version", lambda: "1.0.1")
+    monkeypatch.setattr(
+        release_dogfood,
+        "installed_provenance",
+        lambda *_args, **_kwargs: {"repository_commit": "a" * 40},
+    )
+    seen: list[Path | None] = []
+
+    def stop_before_optimizer(
+        _skill: Path, _engine: str, state_dir: Path | None
+    ) -> tuple[dict[str, str], dict[str, object]]:
+        seen.append(state_dir)
+        raise RuntimeError("stop before optimizer")
+
+    monkeypatch.setattr(release_dogfood, "stage_and_preflight", stop_before_optimizer)
+    output_dir = tmp_path / "external-output"
+
+    receipt, _receipt_path = release_dogfood.run_release("autoresearch", output_dir)
+
+    assert receipt["status"] == "error"
+    assert seen == [None]
+    assert not (output_dir / "adapter-state").exists()
+
+
 def test_staged_login_preflight_rejects_api_keys(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

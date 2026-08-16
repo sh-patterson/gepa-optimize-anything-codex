@@ -161,8 +161,11 @@ def _prepare_codex_runtime(skill: Path, work_dir: Path) -> dict[str, Any]:
         skill / "scripts" / "codex_lm.py",
         f"release_inprocess_driver_{uuid4().hex}",
     )
-    state_dir = work_dir / "adapter-state"
     paths = runtime.stage_runtime(runtime.runtime_paths())
+    # ``work_dir`` is the caller-owned output directory. Adapter journals must
+    # stay below the runtime's private runs root because the sandbox rejects
+    # state outside that boundary.
+    state_dir = paths.runs_root / f"release-inprocess-{uuid4().hex}"
     state_dir = runtime.resolve_state_dir(paths, state_dir)
     probe = runtime.probe_runtime(paths, state_dir)
     if probe.returncode != 0:

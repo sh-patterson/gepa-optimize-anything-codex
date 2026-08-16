@@ -34,3 +34,14 @@ Codex release claim. The public phase certifier must also reconcile installed
 adapter receipts for GEPA, AutoResearch, and MetaHarness, select the Phase 1
 winner from one evaluator, and conserve its exact bytes into a fresh
 AutoResearch continuation.
+
+## Dependency drift gate
+
+The `live` extra is the source-of-truth GEPA pin. Release provenance now reads
+that declared commit and fails if the installed VCS commit differs, so a stale
+environment cannot produce a valid receipt. When upstream `gepa-ai/gepa` moves,
+rebase the lifecycle fix onto the current upstream head, run the upstream
+fidelity and lifecycle suites, and update this file and `pyproject.toml` in the
+same change. Do not repin directly to upstream or adopt a native proposer until
+the Codex model, budget, sandbox-custody, timeout, and live-parity gates are
+separately demonstrated.

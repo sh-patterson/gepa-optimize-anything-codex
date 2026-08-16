@@ -4,19 +4,22 @@ These commands certify an installed marketplace artifact. They are not the
 normal user workflow.
 
 Version 1.1.0 packages the repaired AutoResearch evaluation lifecycle and the
-paper-informed multi-engine composition. It is released only after the public
-deterministic phase certifier passes against the exact installed tag candidate.
-The no-call checks below use fake processes only; the recorded live receipt is
-the evidence for the bounded composition claim.
+paper-informed multi-engine composition. The repository records a historical
+audit pointer for its phase certification, but does not custody that live
+receipt under `release/receipts/`; that pointer is not current release proof.
+For a new release, run the certifier against the exact installed tag candidate
+and preserve its sanitized receipt in the repository before making the claim.
+The no-call checks below use fake processes only.
 
 ## Engine certification boundary
 
 `gepa` and `best_of_n` have narrow installed-plugin probe evidence. The pinned
 GEPA commit's focused tests verify AutoResearch's drain barrier,
-receipt-derived winner, and feedback ordering. The bounded four-stage live
-certifier also passed for installed GEPA, AutoResearch, MetaHarness, and the
-fresh exact-winner continuation. This is orchestration evidence, not semantic
-quality or generalization evidence.
+receipt-derived winner, and feedback ordering. A historical bounded four-stage
+receipt covered installed GEPA, AutoResearch, MetaHarness, and the fresh
+exact-winner continuation, but that receipt is external to this checkout. It is
+orchestration evidence, not semantic quality or generalization evidence, and a
+new release must rerun and custody the receipt.
 
 ## Prepare the installed artifact
 
@@ -24,6 +27,10 @@ Create a fresh virtual environment, `HOME`, `CODEX_HOME`, and adapter state.
 Install the marketplace archive under test. Set `GEPA_CODEX_SKILL_DIR` to that
 installed skill. The runners reject the source checkout, the repository
 marketplace copy, reused state, a missing manifest, and a version mismatch.
+
+The requested output directory stores receipts and other public evidence. The
+runners allocate private adapter journals below the staged runtime's own
+`runs_root`; do not place `adapter-state` beneath the output directory.
 
 Install Codex CLI 0.146.0 beneath the fresh home, then stage and authenticate
 the isolated runtime:
@@ -125,6 +132,13 @@ Receipts use schema 2. Before starting the next live command, confirm:
   estimate;
 - invocation and session mappings that reconcile to the named evidence files;
 - SHA-256 hashes for every named runtime, fixture, journal, and session file.
+
+Before publishing a certification claim, copy the sanitized phase receipt to
+`release/receipts/<version>/phase-certification.json`, verify that its recorded
+repository and GEPA commits match the installed artifact and `pyproject.toml`,
+and record the receipt SHA-256 in `.audit/paper-informed-certification.tsv`.
+An external path or hash alone is an evidence pointer, not repository-custodied
+release proof.
 
 Receipts contain no credentials, prompts, responses, or candidate text. The
 public copy replaces paths beneath the operator's home directory with `$HOME`

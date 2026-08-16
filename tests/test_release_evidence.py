@@ -181,6 +181,13 @@ def test_provenance_reads_installed_manifest_and_commit_sources(
 ) -> None:
     repository_root = tmp_path / "repository"
     repository_root.mkdir()
+    (repository_root / "pyproject.toml").write_text(
+        "[project.optional-dependencies]\n"
+        'live = ["gepa[full] @ git+https://github.com/sh-patterson/gepa.git@'
+        + "b" * 40
+        + '"]\n',
+        encoding="utf-8",
+    )
     skill = tmp_path / "installed" / "plugin" / "skills" / "gepa-optimize-anything-codex"
     skill.mkdir(parents=True)
     (skill / "SKILL.md").write_text("# installed\n", encoding="utf-8")
@@ -197,6 +204,35 @@ def test_provenance_reads_installed_manifest_and_commit_sources(
     assert actual["plugin_manifest"] == str(manifest)
     assert actual["repository_commit"] == "a" * 40
     assert actual["gepa_commit"] == "b" * 40
+
+
+def test_provenance_rejects_stale_installed_gepa_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repository_root = tmp_path / "repository"
+    repository_root.mkdir()
+    (repository_root / "pyproject.toml").write_text(
+        "[project.optional-dependencies]\n"
+        'live = ["gepa[full] @ git+https://github.com/sh-patterson/gepa.git@'
+        + "a" * 40
+        + '"]\n',
+        encoding="utf-8",
+    )
+    skill = (
+        tmp_path / "installed" / "plugin" / "skills" / "gepa-optimize-anything-codex"
+    )
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("# installed\n", encoding="utf-8")
+    (skill / "scripts").mkdir()
+    (skill / "scripts" / "codex_lm.py").write_text("# public\n", encoding="utf-8")
+    manifest = skill.parents[1] / ".codex-plugin" / "plugin.json"
+    manifest.parent.mkdir()
+    manifest.write_text('{"version":"1.0.1"}\n', encoding="utf-8")
+    monkeypatch.setattr(evidence, "git_commit", lambda _root: "a" * 40)
+    monkeypatch.setattr(evidence, "installed_vcs_commit", lambda _package: "b" * 40)
+
+    with pytest.raises(RuntimeError, match="does not match declared live commit"):
+        evidence.installed_provenance(skill, repository_root, "1.0.1")
 
 
 @pytest.mark.parametrize(

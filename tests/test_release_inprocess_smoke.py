@@ -188,7 +188,8 @@ def test_codex_runtime_loads_installed_driver_and_adapter(
             return paths
 
         @staticmethod
-        def resolve_state_dir(_paths: object, state_dir: Path) -> Path:
+        def resolve_state_dir(runtime_paths: object, state_dir: Path) -> Path:
+            assert state_dir.parent == getattr(runtime_paths, "runs_root")
             return state_dir
 
         @staticmethod
@@ -202,7 +203,11 @@ def test_codex_runtime_loads_installed_driver_and_adapter(
     paths = type(
         "Paths",
         (),
-        {"launcher": skill / "scripts" / "claude", "adapter_module": installed_adapter},
+        {
+            "launcher": skill / "scripts" / "claude",
+            "adapter_module": installed_adapter,
+            "runs_root": tmp_path / "runtime-runs",
+        },
     )()
     Runtime.stage_runtime = staticmethod(lambda _paths: paths)
 
@@ -222,6 +227,7 @@ def test_codex_runtime_loads_installed_driver_and_adapter(
         skill / "scripts" / "codex_lm.py",
     ]
     assert runtime["adapter"] == installed_adapter
+    assert runtime["state_dir"].parent == paths.runs_root
 
 
 def test_smoke_requires_installed_plugin(

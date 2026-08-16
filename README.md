@@ -28,20 +28,26 @@ preflight, and inspect the result.
 |---|---|---|---|
 | `gepa` | In process | Installed `CodexLM` | Narrow probe verified |
 | `best_of_n` | In process | Installed `CodexLM` | Narrow probe verified |
-| `autoresearch` | Codex subprocess | Installed Codex adapter | Public deterministic phase certification passed |
-| `meta_harness` | Codex subprocess | Installed Codex adapter | Public deterministic phase certification passed |
+| `autoresearch` | Codex subprocess | Installed Codex adapter | Historical external receipt; fresh rerun required |
+| `meta_harness` | Codex subprocess | Installed Codex adapter | Historical external receipt; fresh rerun required |
 
 `gepa` and `best_of_n` have narrow probe receipts. The pinned GEPA commit's
 AutoResearch tests verify its evaluation-session drain barrier, receipt-derived
-winner, and feedback ordering. The public deterministic phase certification at
-commit `3a9ff30` also ran GEPA, AutoResearch, and MetaHarness against one shared
-evaluator, selected the best comparable score, and seeded a fresh AutoResearch
-continuation with the exact winner bytes. This certifies the installed full three-engine
-paper-informed composition, not semantic quality, generalization, or a dollar-matched
-reproduction of the published Omni experiment.
+winner, and feedback ordering. A historical phase-certification receipt also ran
+GEPA, AutoResearch, and MetaHarness against one shared evaluator, selected the
+best comparable score, and seeded a fresh AutoResearch continuation with the
+exact winner bytes. That external evidence is not a current certification of
+this checkout, and it never claimed semantic quality, generalization, or a
+dollar-matched reproduction of the published Omni experiment.
 
 The installed `scripts/codex_lm.py` callable supplies Codex to the two
 in-process engines. It does not add a new optimizer.
+
+Public deterministic phase certification passed historically for the full three-engine
+composition, but its row is only a historical audit pointer, not a receipt stored
+in this checkout. Treat the phase claim as unverified until a fresh run produces
+a sanitized receipt under `release/receipts/` for the exact installed artifact
+and its hash is recorded in the audit log.
 
 ## Requirements
 
