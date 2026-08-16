@@ -13,6 +13,7 @@ dev = [
 ]
 live = [
   "gepa[full] @ git+https://github.com/sh-patterson/gepa.git@3a6f93c5dd0beb68825973b3b2f2cae23060bbbb",
+  "openai-codex==0.144.4",
 ]
 [tool.pytest.ini_options]
 markers = [

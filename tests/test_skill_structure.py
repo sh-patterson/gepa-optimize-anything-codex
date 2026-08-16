@@ -22,6 +22,7 @@ def test_skill_has_required_files_and_local_links():
     assert (SKILL / "scripts" / "claude").is_file()
     assert (SKILL / "scripts" / "codex_claude_adapter.py").is_file()
     assert (SKILL / "scripts" / "codex_lm.py").is_file()
+    assert (SKILL / "scripts" / "codex_runtime.py").is_file()
     assert (SKILL / "scripts" / "preflight.py").is_file()
     for name in (
         "api.md",
