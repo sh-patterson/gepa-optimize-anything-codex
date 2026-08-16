@@ -1,104 +1,131 @@
 from __future__ import annotations
 
-import importlib.util
-import json
-import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
-
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "plugins" / "gepa-optimize-anything" / "skills" / "gepa-optimize-anything-codex" / "scripts" / "codex_lm.py"
-SPEC = importlib.util.spec_from_file_location("public_codex_lm_test", SCRIPT)
-assert SPEC is not None and SPEC.loader is not None
-codex_lm = importlib.util.module_from_spec(SPEC)
-sys.modules[SPEC.name] = codex_lm
-SPEC.loader.exec_module(codex_lm)
+SCRIPTS = (
+    ROOT
+    / "plugins"
+    / "gepa-optimize-anything"
+    / "skills"
+    / "gepa-optimize-anything-codex"
+    / "scripts"
+)
+sys.path.insert(0, str(SCRIPTS))
+
+import codex_lm  # noqa: E402
+import codex_runtime  # noqa: E402
 
 
-def _config(tmp_path: Path) -> object:
-    return codex_lm.CodexLMConfig(
-        executable=tmp_path / "claude",
-        model="gpt-5.6-luna",
-        reasoning_effort="high",
-        sandbox_mode="workspace-write",
-        state_dir=tmp_path / "state",
-        session_dir=tmp_path / "sessions",
-        timeout_seconds=30,
+def _config(tmp_path: Path, **overrides: object) -> object:
+    values = {
+        "model": "gpt-5.6-luna",
+        "reasoning_effort": "high",
+        "sandbox_mode": "workspace-write",
+        "evidence_dir": (tmp_path / "evidence").resolve(),
+        "timeout_seconds": 30,
+        "allow_cli_fallback": False,
+    }
+    values.update(overrides)
+    return codex_lm.CodexLMConfig(**values)
+
+
+class FakeBackend:
+    kind = "app_server"
+
+    def probe(self) -> object:
+        return codex_runtime.BackendProbe(self.kind, True, "0.144.4", "chatgpt")
+
+    def invoke(self, spec: object) -> object:
+        return codex_runtime.InvocationResult(
+            invocation_id=spec.invocation_id,
+            provider=self.kind,
+            text="BLUE",
+            status="completed",
+            model=spec.model,
+            reasoning_effort=spec.reasoning_effort,
+            sandbox=spec.sandbox,
+            thread_id="thread-1",
+            turn_id="turn-1",
+            usage=codex_runtime.TokenUsage(2, 1, 3, 1, 5),
+            duration_ms=5,
+            runtime_version="0.144.4",
+            auth_mode="chatgpt",
+        )
+
+    def close(self) -> None:
+        pass
+
+
+def _runtime(config: object) -> object:
+    return codex_runtime.CodexRuntime(
+        evidence=codex_runtime.EvidenceStore(config.evidence_dir),
+        primary=FakeBackend(),
+        fallback=None,
     )
 
 
-def test_public_lm_returns_text_and_writes_receipts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    seen: list[str] = []
-
-    def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        seen.extend(command)
-        session_id = command[command.index("--session-id") + 1]
-        payload = {"is_error": False, "session_id": session_id,
-                   "adapter_target_model": "gpt-5.6-luna", "result": "BLUE",
-                   "codex_thread_id": "thread-1", "usage": {"input_tokens": 2, "output_tokens": 3},
-                   "total_cost_usd": 0.001}
-        return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
-
-    monkeypatch.setattr(codex_lm.subprocess, "run", fake_run)
-    lm = codex_lm.CodexLM(_config(tmp_path), cwd=tmp_path, environment={"SAFE": "1"})
+def test_public_lm_returns_text_and_native_receipt(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    lm = codex_lm.CodexLM(
+        config,
+        cwd=tmp_path,
+        environment={"OPENAI_API_KEY": "evaluator-only"},
+        runtime=_runtime(config),
+    )
 
     assert lm("prompt") == "BLUE"
-    assert seen[seen.index("--model") + 1] == "gpt-5.6-luna"
-    assert seen[seen.index("--effort") + 1] == "high"
-    assert lm.total_usage == {"input_tokens": 2, "output_tokens": 3}
-    assert lm.total_cost == pytest.approx(0.001)
+    assert lm.total_usage == {
+        "input_tokens": 2,
+        "cached_input_tokens": 1,
+        "output_tokens": 3,
+        "reasoning_output_tokens": 1,
+        "total_tokens": 5,
+    }
+    assert lm.total_cost is None
+    assert lm.cost_status == "unknown"
     assert lm.last_result is not None
-    assert lm.last_result.estimated_cost_usd == pytest.approx(0.001)
+    assert lm.last_result.provider == "app_server"
+    assert lm.last_result.estimated_cost_usd is None
     assert lm.last_result.raw_receipt_path.is_file()
-    assert lm.last_result.session_mapping_path.is_file()
     with pytest.raises(TypeError):
         lm.last_result.usage["input_tokens"] = 9
 
 
-def test_public_lm_rejects_reused_state_and_invalid_result(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_public_lm_rejects_reused_evidence_root(tmp_path: Path) -> None:
     config = _config(tmp_path)
-    lm = codex_lm.CodexLM(config, cwd=tmp_path, environment={})
+    codex_lm.CodexLM(config, cwd=tmp_path, runtime=_runtime(config))
+
     with pytest.raises(RuntimeError, match="already been used"):
-        codex_lm.CodexLM(config, cwd=tmp_path, environment={})
-    monkeypatch.setattr(codex_lm.subprocess, "run", lambda *_args, **_kwargs: subprocess.CompletedProcess([], 0, "{}", ""))
-    with pytest.raises(RuntimeError, match="invocation failed"):
-        lm("prompt")
+        codex_lm.CodexLM(config, cwd=tmp_path, runtime=_runtime(config))
 
 
-@pytest.mark.parametrize("cost", [None, 0, -1, True, "unknown"])
-def test_public_lm_rejects_invalid_cost_estimate(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cost: object
+def test_public_lm_rejects_litellm_only_options(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    with pytest.raises(ValueError, match="sampling options"):
+        codex_lm.CodexLM(
+            config,
+            cwd=tmp_path,
+            runtime=_runtime(config),
+            temperature=0.7,
+        )
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"model": "other"},
+        {"reasoning_effort": "low"},
+        {"timeout_seconds": 0},
+        {"sandbox_mode": "full-access"},
+        {"evidence_dir": Path("relative")},
+    ],
+)
+def test_public_config_fails_closed(
+    tmp_path: Path, overrides: dict[str, object]
 ) -> None:
-    def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        session_id = command[command.index("--session-id") + 1]
-        payload = {
-            "is_error": False,
-            "session_id": session_id,
-            "adapter_target_model": "gpt-5.6-luna",
-            "result": "BLUE",
-            "codex_thread_id": "thread-1",
-            "usage": {"input_tokens": 2, "output_tokens": 3},
-            "total_cost_usd": cost,
-        }
-        return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
-
-    monkeypatch.setattr(codex_lm.subprocess, "run", fake_run)
-    lm = codex_lm.CodexLM(_config(tmp_path), cwd=tmp_path, environment={})
-    with pytest.raises(RuntimeError, match="no cost estimate"):
-        lm("prompt")
-
-
-@pytest.mark.parametrize("kwargs", [
-    {"model": "other"},
-    {"reasoning_effort": "low"},
-    {"timeout_seconds": 0},
-    {"retry_ceiling": -1},
-])
-def test_public_config_fails_closed(tmp_path: Path, kwargs: dict[str, object]) -> None:
-    values = {"executable": tmp_path / "claude", "model": "gpt-5.6-luna", "reasoning_effort": "high", "sandbox_mode": "workspace-write", "state_dir": tmp_path / "state", "session_dir": tmp_path / "sessions", "timeout_seconds": 1}
-    values.update(kwargs)
     with pytest.raises(ValueError):
-        codex_lm.CodexLMConfig(**values)
+        _config(tmp_path, **overrides)

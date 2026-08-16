@@ -94,7 +94,7 @@ def test_gepa_pin_is_consistent_across_install_paths() -> None:
     upstream = (ROOT / "UPSTREAM.md").read_text(encoding="utf-8")
     skill = (SKILL / "SKILL.md").read_text(encoding="utf-8")
 
-    assert live_dependencies == [PINNED_GEPA_DEPENDENCY]
+    assert live_dependencies == [PINNED_GEPA_DEPENDENCY, "openai-codex==0.144.4"]
     assert PINNED_GEPA_COMMIT in upstream
     assert PINNED_GEPA_DEPENDENCY in skill
 
