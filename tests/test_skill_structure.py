@@ -24,9 +24,12 @@ def test_skill_has_required_files_and_local_links():
     assert (SKILL / "scripts" / "codex_lm.py").is_file()
     assert (SKILL / "scripts" / "codex_cli_backend.py").is_file()
     assert (SKILL / "scripts" / "codex_runtime.py").is_file()
+    assert (SKILL / "scripts" / "canary_contract.py").is_file()
+    assert (SKILL / "scripts" / "al_canary_adapter.py").is_file()
     assert (SKILL / "scripts" / "preflight.py").is_file()
     for name in (
         "api.md",
+        "canary_fixtures.md",
         "gotchas.md",
         "omni.md",
         "runtime.md",
