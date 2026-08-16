@@ -217,6 +217,8 @@ class CodexRuntime:
         started = time.monotonic()
         try:
             result = self._backend.invoke(spec)
+            if result.invocation_id != spec.invocation_id:
+                raise RuntimeError("backend returned the wrong invocation id")
         except AmbiguousInvocation as exc:
             self.evidence.finalize_failure(
                 spec,
@@ -241,8 +243,6 @@ class CodexRuntime:
                 fallback_reason=self._fallback_reason,
             )
             raise
-        if result.invocation_id != spec.invocation_id:
-            raise RuntimeError("backend returned the wrong invocation id")
         if self._fallback_reason:
             result = InvocationResult(
                 **{**asdict(result), "fallback_reason": self._fallback_reason}

@@ -255,6 +255,50 @@ def test_evidence_rejects_duplicate_invocation_id(tmp_path: Path) -> None:
         evidence.claim(spec)
 
 
+def test_runtime_records_failure_when_backend_returns_wrong_invocation_id(
+    tmp_path: Path,
+) -> None:
+    class WrongIdBackend:
+        kind = "app_server"
+
+        def probe(self) -> object:
+            return runtime.BackendProbe(self.kind, True, "1.0", "chatgpt")
+
+        def invoke(self, spec: object) -> object:
+            return runtime.InvocationResult(
+                invocation_id="wrong-id",
+                provider=self.kind,
+                text="BLUE",
+                status="completed",
+                model=spec.model,
+                reasoning_effort=spec.reasoning_effort,
+                sandbox=spec.sandbox,
+                thread_id="thread-1",
+                turn_id="turn-1",
+                usage=runtime.TokenUsage(2, 0, 3, 1, 5),
+                duration_ms=5,
+                runtime_version="1.0",
+                auth_mode="chatgpt",
+            )
+
+        def close(self) -> None:
+            pass
+
+    evidence = runtime.EvidenceStore((tmp_path / "evidence").resolve())
+    coordinator = runtime.CodexRuntime(
+        evidence=evidence, primary=WrongIdBackend(), fallback=None
+    )
+
+    with pytest.raises(RuntimeError, match="wrong invocation id"):
+        coordinator.invoke(_spec(tmp_path))
+
+    receipt = json.loads(
+        (evidence.invocations / "invocation-1.json").read_text(encoding="utf-8")
+    )
+    assert receipt["status"] == "failed"
+    assert "wrong invocation id" in receipt["error"]
+
+
 @pytest.mark.parametrize(
     "overrides",
     [
