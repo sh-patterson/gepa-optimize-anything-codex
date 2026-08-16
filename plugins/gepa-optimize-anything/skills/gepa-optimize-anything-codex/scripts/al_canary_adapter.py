@@ -9,6 +9,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import math
 import time
 import uuid
 from dataclasses import dataclass
@@ -21,6 +22,56 @@ CASES_SHA256 = "44588f35af89527e97b3a080523df8b97f0bafc64051cb4b53114ed1e3fbc9f8
 EXPECTED_CASES = 48
 EXPECTED_SPLITS = {"development": 28, "validation": 20}
 EXPECTED_FAMILIES = 37
+_METRIC_KEYS = frozenset(
+    {
+        "gates_pass",
+        "political_recall",
+        "negative_specificity",
+        "attribution_completion",
+        "false_positives",
+        "positive_abstentions",
+        "negative_abstentions",
+        "reference_unresolved",
+        "calls",
+        "cost_usd",
+        "cost_per_case_usd",
+        "latency_ms",
+        "frames_seen",
+        "hard_failures",
+        "error_counts",
+        "unresolved_overclaims",
+    }
+)
+_FEEDBACK_KEYS = frozenset(
+    {
+        "score",
+        "scores",
+        "gates_pass",
+        "failure_types",
+        "aggregate_only",
+        "sealed_case_details_disclosed",
+    }
+)
+_NESTED_AGGREGATE_KEYS = frozenset(
+    {
+        "political_recall",
+        "negative_specificity",
+        "attribution_completion",
+        "cost_efficiency",
+        "schema_or_evidence_failures",
+        "positive_misses_including_abstentions",
+        "invalid_decision",
+        "invalid_evidence_refs",
+        "invalid_unsupported_claims",
+        "unsupported_claim",
+        "missing_receipt",
+        "invalid_receipt_calls",
+        "invalid_receipt_cost_usd",
+        "invalid_receipt_latency_ms",
+        "invalid_receipt_frames_seen",
+        "unresolved_overclaim",
+    }
+)
 
 
 class RunCase(Protocol):
@@ -129,26 +180,75 @@ def run_canary(
         raise ValueError("split must be development or validation")
     if not prompt.strip():
         raise ValueError("prompt must be non-empty")
-    selected = [case for case in fixture.cases if case["split"] == split]
+    verified_fixture = load_fixture(fixture.root, cases_sha256=fixture.cases_sha256)
+    selected = [case for case in verified_fixture.cases if case["split"] == split]
     predictions = [
-        runner.run_case(prompt, copy.deepcopy(case["model_input"]))
-        for case in selected
+        runner.run_case(prompt, copy.deepcopy(case["model_input"])) for case in selected
     ]
     result = evaluator(
         selected,
         predictions,
         max_cost_per_case_usd=max_cost_per_case_usd,
     )
-    feedback = copy.deepcopy(result.feedback)
+    metrics = _aggregate_only(
+        result.metrics, allowed_keys=_METRIC_KEYS, field="metrics"
+    )
+    feedback = _aggregate_only(
+        result.feedback, allowed_keys=_FEEDBACK_KEYS, field="feedback"
+    )
+    if feedback.get("aggregate_only") is not True:
+        raise ValueError("A|L evaluator must return aggregate-only feedback")
     if feedback.get("sealed_case_details_disclosed") is not False:
-        raise ValueError("A|L evaluator must prove sealed case details were not disclosed")
+        raise ValueError(
+            "A|L evaluator must prove sealed case details were not disclosed"
+        )
     return AlCanaryResult(
         split=split,
         score=float(result.score),
-        metrics=copy.deepcopy(result.metrics),
+        metrics=metrics,
         feedback=feedback,
         prompt_sha256=hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
         cases_sha256=fixture.cases_sha256,
+    )
+
+
+def _aggregate_only(
+    value: object, *, allowed_keys: frozenset[str], field: str
+) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError(f"A|L evaluator {field} must be an object")
+    unexpected = set(value) - allowed_keys
+    if unexpected:
+        raise ValueError(f"A|L evaluator {field} contains non-aggregate keys")
+    cleaned = copy.deepcopy(value)
+    for key, nested in cleaned.items():
+        location = f"{field}.{key}"
+        if key in {"gates_pass", "aggregate_only", "sealed_case_details_disclosed"}:
+            if not isinstance(nested, bool):
+                raise ValueError(f"A|L evaluator {location} must be boolean")
+        elif isinstance(nested, dict):
+            if set(nested) - _NESTED_AGGREGATE_KEYS or any(
+                not _finite_number(item) for item in nested.values()
+            ):
+                raise ValueError(
+                    f"A|L evaluator {location} is not aggregate numeric data"
+                )
+        elif isinstance(nested, list):
+            if any(
+                not isinstance(item, str) or item not in _NESTED_AGGREGATE_KEYS
+                for item in nested
+            ):
+                raise ValueError(f"A|L evaluator {location} contains unsafe values")
+        elif not _finite_number(nested):
+            raise ValueError(f"A|L evaluator {location} must be finite numeric data")
+    return cleaned
+
+
+def _finite_number(value: object) -> bool:
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(float(value))
     )
 
 
@@ -186,7 +286,21 @@ class CodexRuntimeRunner:
                     "type": "string",
                     "enum": ["political_ad", "not_political_ad", "abstain"],
                 },
-                "attribution": {"type": ["object", "null"]},
+                "attribution": {
+                    "anyOf": [
+                        {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "required": ["name", "entity_type", "evidence_ref"],
+                            "properties": {
+                                "name": {"type": "string"},
+                                "entity_type": {"type": "string"},
+                                "evidence_ref": {"type": "string"},
+                            },
+                        },
+                        {"type": "null"},
+                    ]
+                },
                 "evidence_refs": {"type": "array", "items": {"type": "string"}},
                 "unsupported_claims": {
                     "type": "array",
@@ -211,6 +325,10 @@ class CodexRuntimeRunner:
                 output_schema=output_schema,
             )
         )
+        if result.status != "completed":
+            raise RuntimeError(
+                f"Codex A|L turn ended with terminal status {result.status}"
+            )
         try:
             prediction = json.loads(result.text)
         except json.JSONDecodeError as exc:
@@ -225,10 +343,27 @@ class CodexRuntimeRunner:
         prediction["receipt"] = {
             "calls": 1,
             "cost_usd": None,
-            "cost_status": result.cost_status,
+            "cost_status": "unpriced_codex",
             "latency_ms": round((time.monotonic() - started) * 1000, 3),
             "frames_seen": frames_seen,
             "provider": result.provider,
+            "terminal_status": result.status,
+            "requested_model": self.model,
+            "observed_model": result.model,
+            "reasoning_effort": result.reasoning_effort,
+            "runtime_version": result.runtime_version,
+            "auth_mode": result.auth_mode,
+            "tokens": (
+                {
+                    "input": result.usage.input_tokens,
+                    "cached_input": result.usage.cached_input_tokens,
+                    "output": result.usage.output_tokens,
+                    "reasoning_output": result.usage.reasoning_output_tokens,
+                    "total": result.usage.total_tokens,
+                }
+                if result.usage is not None
+                else None
+            ),
             "thread_id": result.thread_id,
             "turn_id": result.turn_id,
         }

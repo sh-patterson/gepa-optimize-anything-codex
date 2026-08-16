@@ -24,6 +24,7 @@ def test_skill_has_required_files_and_local_links():
     assert (SKILL / "scripts" / "codex_lm.py").is_file()
     assert (SKILL / "scripts" / "codex_cli_backend.py").is_file()
     assert (SKILL / "scripts" / "codex_runtime.py").is_file()
+    assert (SKILL / "scripts" / "codex_sdk_client.py").is_file()
     assert (SKILL / "scripts" / "canary_contract.py").is_file()
     assert (SKILL / "scripts" / "al_canary_adapter.py").is_file()
     assert (SKILL / "scripts" / "codex_agent_runner.py").is_file()

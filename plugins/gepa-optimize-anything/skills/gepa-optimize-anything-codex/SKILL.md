@@ -122,7 +122,7 @@ even see it). See `references/api.md` for details and when to use each mode.
 
 ## Install
 ```bash
-pip install "gepa[full] @ git+https://github.com/sh-patterson/gepa.git@74b45c77edb4051ab121ae6b35e6ba9dde28613f"
+pip install "gepa[full] @ git+https://github.com/sh-patterson/gepa.git@1ca8344fe6f970a2815d3c253beef0cdf5d25fc3"
 # [full] pulls cloudpickle — needed to pickle closure evaluators for
                            # parallel workers / opt-in evaluation caching; plain `pip install gepa`
                            # can fail there when your evaluator closes over data.

@@ -92,7 +92,9 @@ class CodexLM:
             allow_cli_fallback=config.allow_cli_fallback,
         )
         self.last_result: CodexLMResult | None = None
-        self.total_cost: None = None
+        # Numeric subtotal stays compatible with GEPA's result arithmetic;
+        # cost_status prevents this known subtotal from becoming a billing claim.
+        self.total_cost = 0.0
         self.cost_status: Literal["unknown"] = "unknown"
         self.total_tokens_in = 0
         self.total_tokens_out = 0

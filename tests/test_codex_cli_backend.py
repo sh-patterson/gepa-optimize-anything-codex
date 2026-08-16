@@ -128,7 +128,9 @@ def test_probe_rejects_zero_exit_not_logged_in(
             subprocess.CompletedProcess([], 0, "Not logged in", ""),
         )
     )
-    monkeypatch.setattr(cli.subprocess, "run", lambda *_args, **_kwargs: next(responses))
+    monkeypatch.setattr(
+        cli.subprocess, "run", lambda *_args, **_kwargs: next(responses)
+    )
     backend = cli.CodexCliBackend(executable=executable, environment={})
 
     probe = backend.probe()
@@ -198,3 +200,34 @@ def test_child_environment_never_copies_api_keys(tmp_path: Path) -> None:
     )
 
     assert environment == {"SAFE": "yes", "CODEX_HOME": str(tmp_path)}
+
+
+def test_cli_terminates_when_lifecycle_monitor_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    executable = tmp_path / "codex.exe"
+    executable.write_bytes(b"")
+    backend = cli.CodexCliBackend(executable=executable, environment={})
+    terminated: list[object] = []
+
+    class FakeProcess:
+        pass
+
+    process = FakeProcess()
+    monkeypatch.setattr(cli.subprocess, "Popen", lambda *args, **kwargs: process)
+    monkeypatch.setattr(
+        cli,
+        "_terminate_process",
+        lambda target, grace: terminated.append((target, grace)),
+    )
+
+    def broken_monitor() -> str | None:
+        raise RuntimeError("monitor failed")
+
+    with pytest.raises(cli.AmbiguousInvocation, match="monitor failed"):
+        backend._run(
+            [str(executable), "exec"],
+            _spec(tmp_path, stop_requested=broken_monitor),
+        )
+
+    assert terminated == [(process, backend.termination_grace_seconds)]

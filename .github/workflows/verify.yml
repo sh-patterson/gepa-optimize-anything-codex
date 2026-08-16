@@ -60,6 +60,7 @@ jobs:
           test -f "$INSTALLED_PLUGIN/UPSTREAM.md"
           test -f "$INSTALLED_SKILL/SKILL.md"
           test -f "$INSTALLED_SKILL/scripts/codex_runtime.py"
+          test -f "$INSTALLED_SKILL/scripts/codex_sdk_client.py"
           test -f "$INSTALLED_SKILL/scripts/codex_agent_runner.py"
           test -f "$INSTALLED_SKILL/scripts/native_preflight.py"
           for source in "$CLEAN_ROOT/marketplace" "$GITHUB_WORKSPACE"; do

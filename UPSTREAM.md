@@ -5,7 +5,7 @@ This repository adapts GEPA's `gepa-optimize-anything` skill for Codex.
 - Original upstream repository: https://github.com/gepa-ai/gepa
 - Pinned compatibility fork: https://github.com/sh-patterson/gepa
 - Upstream skill: `.claude/skills/gepa-optimize-anything`
-- Pinned commit: `74b45c77edb4051ab121ae6b35e6ba9dde28613f`
+- Pinned commit: `1ca8344fe6f970a2815d3c253beef0cdf5d25fc3`
 - Upstream license: MIT
 - Upstream copyright: Copyright (c) 2025 Lakshya A Agrawal
 
@@ -23,7 +23,7 @@ known text-truncation defects repaired from the original release.
 
 ## AutoResearch repair in the pinned commit
 
-Pinned commit `74b45c77edb4051ab121ae6b35e6ba9dde28613f` adds the
+Pinned commit `1ca8344fe6f970a2815d3c253beef0cdf5d25fc3` adds the
 provider-neutral `AgentRunner` seam used by the Codex-native AutoResearch and
 MetaHarness paths. It descends from `736739860458ff420066736e67c9910afcade9d7`,
 the safe

@@ -4,7 +4,7 @@ This plugin adapts GEPA's `gepa-optimize-anything` skill for Codex.
 
 - Original repository: https://github.com/gepa-ai/gepa
 - Pinned compatibility fork: https://github.com/sh-patterson/gepa
-- Pinned commit: `74b45c77edb4051ab121ae6b35e6ba9dde28613f`
+- Pinned commit: `1ca8344fe6f970a2815d3c253beef0cdf5d25fc3`
 - Upstream license: MIT
 - Upstream copyright: Copyright (c) 2025 Lakshya A Agrawal
 

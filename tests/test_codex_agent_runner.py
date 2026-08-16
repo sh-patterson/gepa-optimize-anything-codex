@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -82,3 +84,26 @@ def test_runner_rejects_unknown_resume_and_duplicate_start(tmp_path: Path) -> No
     runner.run(_request(tmp_path))
     with pytest.raises(ValueError, match="already been started"):
         runner.run(_request(tmp_path))
+
+
+def test_runner_reserves_continuation_before_provider_call(tmp_path: Path) -> None:
+    entered = threading.Event()
+    release = threading.Event()
+
+    class BlockingRuntime(FakeRuntime):
+        def invoke(self, spec: object) -> object:
+            entered.set()
+            release.wait(1)
+            return super().invoke(spec)
+
+    native = BlockingRuntime()
+    runner = agent.CodexAgentRunner(native)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(runner.run, _request(tmp_path))
+        assert entered.wait(1)
+        with pytest.raises(ValueError, match="in flight"):
+            runner.run(_request(tmp_path))
+        release.set()
+        first.result()
+
+    assert len(native.specs) == 1

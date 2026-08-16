@@ -145,3 +145,45 @@ def test_runner_cannot_substitute_case_identity(tmp_path: Path) -> None:
         canary.run_suite(
             "prompt-v2", suite, WrongRunner(), UnusedEvaluator(), split="validation"
         )
+
+
+@pytest.mark.parametrize("target", ["manifest", "artifact"])
+def test_run_rechecks_custody_after_loading(tmp_path: Path, target: str) -> None:
+    manifest = _manifest(tmp_path)
+    suite = canary.load_suite(manifest)
+    if target == "manifest":
+        manifest.write_text("{}", encoding="utf-8")
+    else:
+        (tmp_path / "cases" / "validation.json").write_text(
+            '{"frozen":false}', encoding="utf-8"
+        )
+
+    with pytest.raises(ValueError, match="changed|hash mismatch"):
+        canary.run_suite("prompt-v2", suite, object(), object(), split="validation")
+
+
+def test_runner_receives_payload_copy(tmp_path: Path) -> None:
+    suite = canary.load_suite(_manifest(tmp_path))
+
+    class MutatingRunner:
+        def run_case(
+            self, candidate: str, case: canary.CaseInput
+        ) -> canary.CaseObservation:
+            del candidate
+            case.payload["injected"] = True
+            return canary.CaseObservation(case.case_id, "abstain")
+
+    class Evaluator:
+        def evaluate(
+            self,
+            candidate: str,
+            case: canary.CanaryCase,
+            observation: canary.CaseObservation,
+        ) -> canary.CaseScore:
+            del candidate, observation
+            assert "injected" not in case.payload
+            return canary.CaseScore(1, "sealed")
+
+    canary.run_suite(
+        "prompt-v2", suite, MutatingRunner(), Evaluator(), split="validation"
+    )

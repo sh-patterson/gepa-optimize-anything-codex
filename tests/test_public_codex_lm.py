@@ -85,7 +85,7 @@ def test_public_lm_returns_text_and_native_receipt(tmp_path: Path) -> None:
         "reasoning_output_tokens": 1,
         "total_tokens": 5,
     }
-    assert lm.total_cost is None
+    assert lm.total_cost == 0
     assert lm.cost_status == "unknown"
     assert lm.last_result is not None
     assert lm.last_result.provider == "app_server"

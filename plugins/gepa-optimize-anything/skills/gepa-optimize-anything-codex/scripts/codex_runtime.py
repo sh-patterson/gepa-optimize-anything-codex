@@ -3,12 +3,13 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import threading
 import time
-from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError
+from concurrent.futures import Future, TimeoutError
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Literal, Mapping, Protocol
+from typing import Any, Callable, Literal, Mapping, Protocol
 
 
 ProviderKind = Literal["app_server", "codex_cli"]
@@ -43,11 +44,16 @@ class InvocationSpec:
     sandbox: SandboxMode
     output_schema: Mapping[str, object] | None = None
     resume_thread_id: str | None = None
+    stop_requested: Callable[[], str | None] | None = None
 
     def __post_init__(self) -> None:
         if not self.invocation_id or not self.invocation_id.isascii():
             raise ValueError("invocation_id must be non-empty ASCII")
-        if any(character not in "-_0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ" for character in self.invocation_id):
+        if any(
+            character
+            not in "-_0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+            for character in self.invocation_id
+        ):
             raise ValueError("invocation_id contains unsafe characters")
         if not self.prompt.strip():
             raise ValueError("prompt must be non-empty")
@@ -190,6 +196,7 @@ class CodexRuntime:
         self._backend: RuntimeBackend | None = None
         self._probe: BackendProbe | None = None
         self._fallback_reason: str | None = None
+        self._prepare_lock = threading.Lock()
 
     @property
     def fallback_reason(self) -> str | None:
@@ -198,23 +205,28 @@ class CodexRuntime:
     def prepare(self) -> BackendProbe:
         if self._probe is not None:
             return self._probe
-        primary_probe = self.primary.probe()
-        if primary_probe.available:
-            self._backend = self.primary
-            self._probe = primary_probe
-            return primary_probe
-        if self.fallback is None:
-            raise BackendUnavailable(primary_probe.reason or "primary unavailable")
-        fallback_probe = self.fallback.probe()
-        if not fallback_probe.available:
-            reasons = "; ".join(
-                reason for reason in (primary_probe.reason, fallback_probe.reason) if reason
-            )
-            raise BackendUnavailable(reasons or "no Codex runtime is available")
-        self._backend = self.fallback
-        self._probe = fallback_probe
-        self._fallback_reason = primary_probe.reason or "primary unavailable"
-        return fallback_probe
+        with self._prepare_lock:
+            if self._probe is not None:
+                return self._probe
+            primary_probe = self.primary.probe()
+            if primary_probe.available:
+                self._backend = self.primary
+                self._probe = primary_probe
+                return primary_probe
+            if self.fallback is None:
+                raise BackendUnavailable(primary_probe.reason or "primary unavailable")
+            fallback_probe = self.fallback.probe()
+            if not fallback_probe.available:
+                reasons = "; ".join(
+                    reason
+                    for reason in (primary_probe.reason, fallback_probe.reason)
+                    if reason
+                )
+                raise BackendUnavailable(reasons or "no Codex runtime is available")
+            self._backend = self.fallback
+            self._probe = fallback_probe
+            self._fallback_reason = primary_probe.reason or "primary unavailable"
+            return fallback_probe
 
     def invoke(self, spec: InvocationSpec) -> InvocationResult:
         probe = self.prepare()
@@ -280,7 +292,7 @@ def create_runtime(
     allow_cli_fallback: bool = True,
 ) -> CodexRuntime:
     """Build the supported App Server primary and optional direct CLI fallback."""
-    primary = SdkAppServerBackend(codex_home=codex_home)
+    primary = SdkAppServerBackend(codex_home=codex_home, environment=environment)
     fallback = None
     if allow_cli_fallback:
         executable = cli_executable or _find_codex_cli()
@@ -309,55 +321,139 @@ class SdkAppServerBackend:
         *,
         sdk_module: object | None = None,
         codex_home: Path | None = None,
+        environment: Mapping[str, str] | None = None,
         interrupt_grace_seconds: float = 5.0,
+        probe_timeout_seconds: float = 30.0,
     ) -> None:
         if interrupt_grace_seconds <= 0:
             raise ValueError("interrupt grace must be positive")
+        if probe_timeout_seconds <= 0:
+            raise ValueError("probe timeout must be positive")
         self._sdk_module = sdk_module
+        self._use_sanitized_client = sdk_module is None
         self._codex_home = (codex_home or Path.home() / ".codex").resolve()
+        self._environment = dict(environment or {})
+        self._environment["OPENAI_API_KEY"] = ""
+        self._environment["CODEX_API_KEY"] = ""
+        self._environment["CODEX_HOME"] = str(self._codex_home)
         self._client: Any | None = None
         self._probe: BackendProbe | None = None
         self._interrupt_grace_seconds = interrupt_grace_seconds
+        self._probe_timeout_seconds = probe_timeout_seconds
+        self._state_lock = threading.RLock()
+        self._probe_lock = threading.Lock()
+        self._setup_leases = 0
 
     def probe(self) -> BackendProbe:
-        if self._probe is not None:
-            return self._probe
-        try:
-            sdk = self._sdk()
-            config = sdk.CodexConfig(
-                experimental_api=False,
-                env={"CODEX_HOME": str(self._codex_home)},
-                config_overrides=(
+        with self._state_lock:
+            cached = self._probe
+        if cached is not None:
+            return cached
+
+        with self._probe_lock:
+            with self._state_lock:
+                cached = self._probe
+            if cached is not None:
+                return cached
+
+            observed_client: dict[str, Any] = {}
+            timed_out = threading.Event()
+
+            def observe(client: Any) -> None:
+                observed_client["client"] = client
+                if timed_out.is_set():
+                    self._force_close_probe_client(client)
+
+            def start_and_authenticate() -> tuple[Any, str, str]:
+                sdk = self._sdk()
+                config_overrides = (
                     "sandbox_workspace_write.network_access=false",
                     'web_search="disabled"',
-                ),
+                )
+                config = sdk.CodexConfig(
+                    experimental_api=False,
+                    env=self._environment,
+                    config_overrides=config_overrides,
+                )
+                if self._use_sanitized_client:
+                    from codex_sdk_client import create_sanitized_codex
+
+                    client = create_sanitized_codex(
+                        sdk, config, client_observer=observe
+                    )
+                else:
+                    client = sdk.Codex(config)
+                    observe(client)
+                account = client.account(refresh_token=False)
+                auth_mode = _auth_mode(account)
+                if auth_mode == "none":
+                    raise RuntimeError("Codex authentication is required")
+                return client, auth_mode, str(sdk.__version__)
+
+            future = _submit_daemon(
+                start_and_authenticate, name="gepa-codex-app-server-probe"
             )
-            self._client = sdk.Codex(config)
-            account = self._client.account(refresh_token=False)
-            auth_mode = _auth_mode(account)
-            if auth_mode == "none":
-                raise RuntimeError("Codex authentication is required")
-            self._probe = BackendProbe(
-                provider=self.kind,
-                available=True,
-                runtime_version=str(sdk.__version__),
-                auth_mode=auth_mode,
-            )
-        except Exception as exc:
-            self.close()
-            self._probe = BackendProbe(
-                provider=self.kind,
-                available=False,
-                runtime_version=None,
-                auth_mode=None,
-                reason=_safe_reason(f"{type(exc).__name__}: {exc}"),
-            )
-        return self._probe
+            try:
+                client, auth_mode, runtime_version = future.result(
+                    timeout=self._probe_timeout_seconds
+                )
+                probe = BackendProbe(
+                    provider=self.kind,
+                    available=True,
+                    runtime_version=runtime_version,
+                    auth_mode=auth_mode,
+                )
+            except TimeoutError:
+                timed_out.set()
+                client = observed_client.get("client")
+                if client is not None:
+                    self._force_close_probe_client(client)
+                future.add_done_callback(self._close_late_probe_result)
+                client = None
+                probe = BackendProbe(
+                    provider=self.kind,
+                    available=False,
+                    runtime_version=None,
+                    auth_mode=None,
+                    reason="App Server probe timed out",
+                )
+            except Exception as exc:
+                client = observed_client.get("client")
+                if client is not None:
+                    self._force_close_probe_client(client)
+                client = None
+                probe = BackendProbe(
+                    provider=self.kind,
+                    available=False,
+                    runtime_version=None,
+                    auth_mode=None,
+                    reason=_safe_reason(f"{type(exc).__name__}: {exc}"),
+                )
+            with self._state_lock:
+                self._client = client
+                self._probe = probe
+            return probe
+
+    @staticmethod
+    def _force_close_probe_client(client: Any) -> None:
+        try:
+            force_close = getattr(client, "force_close", None)
+            if force_close is not None:
+                force_close()
+            else:
+                client.close()
+        except Exception:
+            pass
+
+    def _close_late_probe_result(self, future: Future[Any]) -> None:
+        try:
+            client, _, _ = future.result()
+        except BaseException:
+            return
+        self._force_close_probe_client(client)
 
     def invoke(self, spec: InvocationSpec) -> InvocationResult:
         probe = self.probe()
-        if not probe.available or self._client is None:
-            raise BackendUnavailable(probe.reason or "App Server unavailable")
         sdk = self._sdk()
         approval_mode = sdk.ApprovalMode.deny_all
         sandbox = {
@@ -371,21 +467,67 @@ class SdkAppServerBackend:
             "sandbox": sandbox,
             "service_name": "gepa_optimize_anything_codex",
         }
-        if spec.resume_thread_id:
-            thread = self._client.thread_resume(spec.resume_thread_id, **thread_kwargs)
-        else:
-            thread = self._client.thread_start(**thread_kwargs)
-        handle = thread.turn(
-            spec.prompt,
-            approval_mode=approval_mode,
-            cwd=str(spec.cwd),
-            effort=spec.reasoning_effort,
-            model=spec.model,
-            output_schema=dict(spec.output_schema) if spec.output_schema else None,
-            sandbox=sandbox,
-        )
+        with self._state_lock:
+            if not probe.available or self._probe is not probe or self._client is None:
+                raise BackendUnavailable(probe.reason or "App Server unavailable")
+            client = self._client
+
+        def start_turn() -> tuple[Any, Any]:
+            if spec.resume_thread_id:
+                thread = self._dispatch_setup_rpc(
+                    client,
+                    probe,
+                    lambda: client.thread_resume(
+                        spec.resume_thread_id, **thread_kwargs
+                    ),
+                )
+            else:
+                thread = self._dispatch_setup_rpc(
+                    client, probe, lambda: client.thread_start(**thread_kwargs)
+                )
+            handle = self._dispatch_setup_rpc(
+                client,
+                probe,
+                lambda: thread.turn(
+                    spec.prompt,
+                    approval_mode=approval_mode,
+                    cwd=str(spec.cwd),
+                    effort=spec.reasoning_effort,
+                    model=spec.model,
+                    output_schema=(
+                        dict(spec.output_schema) if spec.output_schema else None
+                    ),
+                    sandbox=sandbox,
+                ),
+            )
+            return thread, handle
+
         started = time.monotonic()
-        result = self._run_with_timeout(handle, spec.timeout_seconds)
+        setup_future = _submit_daemon(start_turn, name="gepa-codex-turn-setup")
+        try:
+            thread, handle = setup_future.result(timeout=spec.timeout_seconds)
+        except TimeoutError as exc:
+            self._contain_unconfirmed_turn()
+            raise AmbiguousInvocation(
+                "Codex turn setup exceeded the invocation timeout"
+            ) from exc
+        except Exception as exc:
+            with self._state_lock:
+                still_current = self._client is client and self._probe is probe
+            if not still_current:
+                raise AmbiguousInvocation(
+                    "Codex turn setup raced with backend containment"
+                ) from exc
+            raise
+        remaining = spec.timeout_seconds - (time.monotonic() - started)
+        if remaining <= 0:
+            self._contain_unconfirmed_turn()
+            raise AmbiguousInvocation(
+                "Codex turn setup consumed the invocation timeout"
+            )
+        result = self._run_with_timeout(
+            handle, remaining, stop_requested=spec.stop_requested
+        )
         duration_ms = result.duration_ms
         if duration_ms is None:
             duration_ms = round((time.monotonic() - started) * 1000)
@@ -410,26 +552,105 @@ class SdkAppServerBackend:
             auth_mode=probe.auth_mode or "unknown",
         )
 
-    def _run_with_timeout(self, handle: Any, timeout_seconds: float) -> Any:
-        executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="gepa-codex-turn")
-        future: Future[Any] = executor.submit(handle.run)
+    def _dispatch_setup_rpc(
+        self,
+        client: Any,
+        probe: BackendProbe,
+        call: Callable[[], Any],
+    ) -> Any:
+        """Reserve one setup RPC before dispatch so poisoning cannot race it."""
+        with self._state_lock:
+            if self._client is not client or self._probe is not probe:
+                raise BackendUnavailable("App Server was contained during turn setup")
+            self._setup_leases += 1
         try:
-            return future.result(timeout=timeout_seconds)
-        except TimeoutError:
-            handle.interrupt()
-            try:
-                return future.result(timeout=self._interrupt_grace_seconds)
-            except TimeoutError as exc:
-                raise AmbiguousInvocation(
-                    "Codex turn did not terminate after interrupt"
-                ) from exc
+            return call()
         finally:
-            executor.shutdown(wait=False, cancel_futures=True)
+            with self._state_lock:
+                self._setup_leases -= 1
+
+    def _run_with_timeout(
+        self,
+        handle: Any,
+        timeout_seconds: float,
+        *,
+        stop_requested: Callable[[], str | None] | None = None,
+    ) -> Any:
+        future = _submit_daemon(handle.run, name="gepa-codex-turn")
+        deadline = time.monotonic() + timeout_seconds
+        while True:
+            try:
+                reason = stop_requested() if stop_requested is not None else None
+            except Exception as exc:
+                try:
+                    self._interrupt_and_collect(
+                        handle, future, "lifecycle monitor failure"
+                    )
+                except AmbiguousInvocation:
+                    raise AmbiguousInvocation(
+                        "Codex lifecycle monitor failed; turn status is ambiguous"
+                    ) from exc
+                self._contain_unconfirmed_turn()
+                raise AmbiguousInvocation(
+                    "Codex lifecycle monitor failed; turn status is ambiguous"
+                ) from exc
+            remaining = deadline - time.monotonic()
+            if reason is not None or remaining <= 0:
+                return self._interrupt_and_collect(handle, future, reason)
+            try:
+                return future.result(timeout=min(0.1, remaining))
+            except TimeoutError:
+                continue
+
+    def _interrupt_and_collect(
+        self, handle: Any, future: Future[Any], reason: str | None
+    ) -> Any:
+        interrupt_future = _submit_daemon(handle.interrupt, name="gepa-codex-interrupt")
+        try:
+            interrupt_future.result(timeout=self._interrupt_grace_seconds)
+        except Exception as exc:
+            self._contain_unconfirmed_turn()
+            raise AmbiguousInvocation(
+                "Codex turn stopped but interruption could not be confirmed"
+            ) from exc
+        try:
+            return future.result(timeout=self._interrupt_grace_seconds)
+        except TimeoutError as exc:
+            self._contain_unconfirmed_turn()
+            detail = reason or "runtime timeout"
+            raise AmbiguousInvocation(
+                f"Codex turn did not terminate after interrupt ({_safe_reason(detail)})"
+            ) from exc
+
+    def _contain_unconfirmed_turn(self) -> None:
+        with self._state_lock:
+            client = self._client
+            self._client = None
+            leased_setups = self._setup_leases
+            self._probe = BackendProbe(
+                provider=self.kind,
+                available=False,
+                runtime_version=None,
+                auth_mode=None,
+                reason=(
+                    "Codex turn termination was unconfirmed; backend was contained; "
+                    f"preexisting_setup_leases={leased_setups}"
+                ),
+            )
+        try:
+            if client is not None:
+                client.close()
+        except Exception:
+            # The transport is already untrusted. Preserve the ambiguous status
+            # instead of allowing a secondary shutdown error to relabel it.
+            pass
 
     def close(self) -> None:
-        if self._client is not None:
-            self._client.close()
+        with self._state_lock:
+            client = self._client
             self._client = None
+        if client is not None:
+            client.close()
 
     def _sdk(self) -> Any:
         if self._sdk_module is None:
@@ -449,6 +670,22 @@ def _status_value(status: object) -> TerminalStatus:
     if value not in mapping:
         return "ambiguous"
     return mapping[value]  # type: ignore[return-value]
+
+
+def _submit_daemon(call: Callable[[], Any], *, name: str) -> Future[Any]:
+    """Run an SDK blocking call without registering an interpreter-exit join."""
+    future: Future[Any] = Future()
+
+    def invoke() -> None:
+        if not future.set_running_or_notify_cancel():
+            return
+        try:
+            future.set_result(call())
+        except BaseException as exc:
+            future.set_exception(exc)
+
+    threading.Thread(target=invoke, name=name, daemon=True).start()
+    return future
 
 
 def _usage(raw: object) -> TokenUsage:

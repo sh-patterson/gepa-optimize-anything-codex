@@ -132,6 +132,110 @@ def test_fixture_rejects_changed_custody_artifact(tmp_path: Path) -> None:
         al.load_fixture(root, cases_sha256=cases_hash)
 
 
+def test_canary_reloads_frozen_cases_before_run(tmp_path: Path) -> None:
+    root, cases_hash = _fixture(tmp_path)
+    fixture = al.load_fixture(root, cases_sha256=cases_hash)
+    fixture.cases[28]["sealed_truth"]["class"] = "tampered"
+
+    class Runner:
+        def run_case(
+            self, prompt: str, model_input: dict[str, object]
+        ) -> dict[str, object]:
+            del prompt, model_input
+            return {"decision": "abstain"}
+
+    def evaluator(
+        cases: list[dict[str, object]],
+        predictions: list[dict[str, object]],
+        **kwargs: object,
+    ) -> object:
+        del predictions, kwargs
+        assert cases[0]["sealed_truth"]["class"] != "tampered"
+        return SimpleNamespace(
+            score=0,
+            metrics={"gates_pass": False},
+            feedback={
+                "aggregate_only": True,
+                "sealed_case_details_disclosed": False,
+            },
+        )
+
+    al.run_canary(
+        "recognize",
+        fixture,
+        Runner(),
+        evaluator,
+        split="validation",
+        max_cost_per_case_usd=0.05,
+    )
+
+
+def test_canary_rejects_sealed_truth_in_evaluator_output(tmp_path: Path) -> None:
+    root, cases_hash = _fixture(tmp_path)
+    fixture = al.load_fixture(root, cases_sha256=cases_hash)
+
+    class Runner:
+        def run_case(
+            self, prompt: str, model_input: dict[str, object]
+        ) -> dict[str, object]:
+            del prompt, model_input
+            return {"decision": "abstain"}
+
+    def evaluator(*args: object, **kwargs: object) -> object:
+        del args, kwargs
+        return SimpleNamespace(
+            score=0,
+            metrics={"gates_pass": False, "family-01": "political_ad"},
+            feedback={
+                "aggregate_only": True,
+                "sealed_case_details_disclosed": False,
+            },
+        )
+
+    with pytest.raises(ValueError, match="non-aggregate keys"):
+        al.run_canary(
+            "recognize",
+            fixture,
+            Runner(),
+            evaluator,
+            split="validation",
+            max_cost_per_case_usd=0.05,
+        )
+
+
+def test_canary_rejects_sealed_truth_in_allowed_scalar_field(tmp_path: Path) -> None:
+    root, cases_hash = _fixture(tmp_path)
+    fixture = al.load_fixture(root, cases_sha256=cases_hash)
+
+    class Runner:
+        def run_case(
+            self, prompt: str, model_input: dict[str, object]
+        ) -> dict[str, object]:
+            del prompt, model_input
+            return {"decision": "abstain"}
+
+    def evaluator(*args: object, **kwargs: object) -> object:
+        del args, kwargs
+        return SimpleNamespace(
+            score=0,
+            metrics={"gates_pass": "family-01: political_ad"},
+            feedback={
+                "aggregate_only": True,
+                "sealed_case_details_disclosed": False,
+            },
+        )
+
+    with pytest.raises(ValueError, match="must be boolean"):
+        al.run_canary(
+            "recognize",
+            fixture,
+            Runner(),
+            evaluator,
+            split="validation",
+            max_cost_per_case_usd=0.05,
+        )
+
+
 def test_codex_runner_uses_read_only_runtime_and_preserves_unknown_cost(
     tmp_path: Path,
 ) -> None:
@@ -152,6 +256,18 @@ def test_codex_runner_uses_read_only_runtime_and_preserves_unknown_cost(
                 ),
                 cost_status="unknown",
                 provider="app_server",
+                status="completed",
+                model="gpt-5.6-luna",
+                reasoning_effort="high",
+                runtime_version="0.144.4",
+                auth_mode="chatgpt",
+                usage=SimpleNamespace(
+                    input_tokens=2,
+                    cached_input_tokens=1,
+                    output_tokens=3,
+                    reasoning_output_tokens=1,
+                    total_tokens=5,
+                ),
                 thread_id="thread-1",
                 turn_id="turn-1",
             )
@@ -166,5 +282,21 @@ def test_codex_runner_uses_read_only_runtime_and_preserves_unknown_cost(
     assert runtime.spec.sandbox == "read-only"
     assert runtime.spec.model == "gpt-5.6-luna"
     assert runtime.spec.reasoning_effort == "high"
+    attribution_schema = runtime.spec.output_schema["properties"]["attribution"]
+    assert attribution_schema["anyOf"][0]["additionalProperties"] is False
     assert prediction["receipt"]["cost_usd"] is None
-    assert prediction["receipt"]["cost_status"] == "unknown"
+    assert prediction["receipt"]["cost_status"] == "unpriced_codex"
+    assert prediction["receipt"]["observed_model"] == "gpt-5.6-luna"
+    assert prediction["receipt"]["tokens"]["total"] == 5
+
+
+def test_codex_runner_preserves_interrupted_terminal_status(tmp_path: Path) -> None:
+    class InterruptedRuntime:
+        def invoke(self, spec: object) -> object:
+            del spec
+            return SimpleNamespace(status="interrupted")
+
+    runner = al.CodexRuntimeRunner(InterruptedRuntime(), cwd=tmp_path)
+
+    with pytest.raises(RuntimeError, match="terminal status interrupted"):
+        runner.run_case("recognize", {"sources": []})

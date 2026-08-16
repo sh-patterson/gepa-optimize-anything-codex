@@ -12,7 +12,7 @@ dev = [
   "ruff>=0.11",
 ]
 live = [
-  "gepa[full] @ git+https://github.com/sh-patterson/gepa.git@74b45c77edb4051ab121ae6b35e6ba9dde28613f",
+  "gepa[full] @ git+https://github.com/sh-patterson/gepa.git@1ca8344fe6f970a2815d3c253beef0cdf5d25fc3",
   "openai-codex==0.144.4",
 ]
 [tool.pytest.ini_options]

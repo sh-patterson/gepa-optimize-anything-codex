@@ -122,7 +122,9 @@ class CodexCliBackend:
         duration_ms = round((time.monotonic() - started) * 1000)
         terminal = parse_jsonl(completed.stdout)
         if terminal.status in {"missing", "invalid"}:
-            raise AmbiguousInvocation(terminal.error or "Codex terminal event is missing")
+            raise AmbiguousInvocation(
+                terminal.error or "Codex terminal event is missing"
+            )
         if completed.returncode != 0 and terminal.status == "completed":
             raise AmbiguousInvocation("Codex completed but the process exited non-zero")
         if terminal.status == "completed" and (
@@ -162,11 +164,29 @@ class CodexCliBackend:
             start_new_session=os.name != "nt",
             creationflags=creationflags,
         )
-        try:
-            stdout, stderr = process.communicate(timeout=spec.timeout_seconds)
-        except subprocess.TimeoutExpired as exc:
-            _terminate_process(process, self.termination_grace_seconds)
-            raise AmbiguousInvocation("Codex CLI timed out and was terminated") from exc
+        deadline = time.monotonic() + spec.timeout_seconds
+        while True:
+            try:
+                reason = (
+                    spec.stop_requested() if spec.stop_requested is not None else None
+                )
+            except Exception as exc:
+                _terminate_process(process, self.termination_grace_seconds)
+                raise AmbiguousInvocation(
+                    "Codex lifecycle monitor failed; CLI was terminated"
+                ) from exc
+            remaining = deadline - time.monotonic()
+            if reason is not None or remaining <= 0:
+                _terminate_process(process, self.termination_grace_seconds)
+                detail = reason or "runtime timeout"
+                raise AmbiguousInvocation(
+                    f"Codex CLI was terminated before a terminal event: {_safe_reason(detail)}"
+                )
+            try:
+                stdout, stderr = process.communicate(timeout=min(0.1, remaining))
+                break
+            except subprocess.TimeoutExpired:
+                continue
         return subprocess.CompletedProcess(
             command, process.returncode, stdout=stdout, stderr=stderr
         )
@@ -233,10 +253,14 @@ def parse_jsonl(raw: str) -> CliTerminal:
         event_type = event.get("type")
         if event_type == "thread.started":
             raw_thread = event.get("thread_id")
-            thread_id = raw_thread if isinstance(raw_thread, str) and raw_thread else None
+            thread_id = (
+                raw_thread if isinstance(raw_thread, str) and raw_thread else None
+            )
         item = event.get("item")
         if event_type == "item.completed" and isinstance(item, dict):
-            if item.get("type") == "agent_message" and isinstance(item.get("text"), str):
+            if item.get("type") == "agent_message" and isinstance(
+                item.get("text"), str
+            ):
                 messages.append(item["text"])
         if event_type in {"turn.completed", "turn.failed", "error"}:
             terminal_events += 1
@@ -252,8 +276,12 @@ def parse_jsonl(raw: str) -> CliTerminal:
                 status = "completed"
             else:
                 status = "failed"
-                error = _safe_reason(str(event.get("error") or event.get("message") or "failed"))
-    return CliTerminal(thread_id, messages[-1] if messages else "", status, usage, error)
+                error = _safe_reason(
+                    str(event.get("error") or event.get("message") or "failed")
+                )
+    return CliTerminal(
+        thread_id, messages[-1] if messages else "", status, usage, error
+    )
 
 
 def _event_usage(raw: object) -> TokenUsage:

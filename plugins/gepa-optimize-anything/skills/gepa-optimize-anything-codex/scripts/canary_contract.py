@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import copy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, Protocol
@@ -38,6 +39,7 @@ class CanarySuite:
     positive_label: str
     cases: tuple[CanaryCase, ...]
     manifest_sha256: str
+    manifest_path: Path
 
 
 @dataclass(frozen=True)
@@ -158,6 +160,7 @@ def load_suite(manifest_path: Path) -> CanarySuite:
         positive_label=positive_label,
         cases=tuple(cases),
         manifest_sha256=hashlib.sha256(raw_bytes).hexdigest(),
+        manifest_path=manifest_path,
     )
 
 
@@ -172,6 +175,11 @@ def run_suite(
     """Run one frozen split through injected runner and evaluator seams."""
     if not candidate.strip():
         raise ValueError("candidate must be non-empty")
+    if (
+        hashlib.sha256(suite.manifest_path.read_bytes()).hexdigest()
+        != suite.manifest_sha256
+    ):
+        raise ValueError("canary manifest changed after loading")
     selected = tuple(case for case in suite.cases if case.split == split)
     if not selected:
         raise ValueError(f"suite has no {split} cases")
@@ -183,10 +191,16 @@ def run_suite(
     unknown_cost_cases = 0
     review_units = 0
     for case in selected:
+        for artifact in case.artifacts:
+            if (
+                hashlib.sha256(artifact.path.read_bytes()).hexdigest()
+                != artifact.sha256
+            ):
+                raise ValueError(f"artifact hash mismatch before run: {artifact.path}")
         runner_input = CaseInput(
             case_id=case.case_id,
             artifacts=case.artifacts,
-            payload=case.payload,
+            payload=copy.deepcopy(case.payload),
         )
         observation = runner.run_case(candidate, runner_input)
         if observation.case_id != case.case_id:
@@ -228,7 +242,9 @@ def _load_artifacts(
             raise ValueError(f"case {case_id} artifact must be an object")
         relative = Path(_required_string(raw, "path"))
         if relative.is_absolute() or ".." in relative.parts:
-            raise ValueError(f"case {case_id} artifact path must stay under manifest root")
+            raise ValueError(
+                f"case {case_id} artifact path must stay under manifest root"
+            )
         path = (root / relative).resolve()
         if not path.is_relative_to(root):
             raise ValueError(f"case {case_id} artifact escapes manifest root")
