@@ -96,6 +96,33 @@ unknown flags plus `--settings` before Codex starts.
             "  `max_switches`.",
             "  `max_switches`.\n\nFor Codex agentic compositions, use `patience=2`. Individual `autoresearch` and `meta_harness`\nruns do not expose a common plateau setting, so their iteration, invocation, and evaluation caps\nremain the stop boundary.",
         )
+    text = text.replace(
+        "The engine lays out a work dir (`program.md`, `candidate.txt`, `best_candidate.txt`, `eval.sh`) and\n"
+        "launches `claude --print`; `eval.sh` POSTs candidates to the eval server, which enforces the budget\n"
+        "server-side (HTTP 429 on exhaustion) and caps LLM spend via `--max-budget-usd` (from\n"
+        "`max_token_cost`). Train and val are presented to the agent as one combined pool; the test set is\n"
+        "unreachable over HTTP.",
+        "The engine lays out a work dir (`program.md`, `candidate.txt`, `best_candidate.txt`, `eval.sh`) and\n"
+        "launches `claude --print`; `eval.sh` POSTs candidates to the eval server, which enforces the\n"
+        "evaluation budget server-side (HTTP 429 on exhaustion). In this Codex port, `max_token_cost` is\n"
+        "rejected before launch; bound agentic work with `max_evals`, `max_iterations`,\n"
+        "`max_candidates_per_iter`, `stop_at_score`, and the adapter invocation cap. Train and val are\n"
+        "presented to the agent as one combined pool; the test set is unreachable over HTTP.",
+    )
+    if "Callers must explicitly set Codex-backed" not in text:
+        text = text.replace(
+            "Each iteration the proposer subprocess reads the frontier + history state files, writes\n"
+            "`pending_eval.json` with 1+ candidates, and the engine benchmarks each through the eval server.\n"
+            "\n"
+            "### `best_of_n`",
+            "Each iteration the proposer subprocess reads the frontier + history state files, writes\n"
+            "`pending_eval.json` with 1+ candidates, and the engine benchmarks each through the eval server.\n"
+            "Callers must explicitly set Codex-backed `max_evals=10`, `max_iterations=3`, and\n"
+            "`max_candidates_per_iter=3`. The adapter alone enforces a default of four atomic starts per state\n"
+            "directory, including one retry only when Codex is known not to have started.\n"
+            "\n"
+            "### `best_of_n`",
+        )
     return text
 
 

@@ -92,6 +92,8 @@ def test_codex_agentic_caller_limits_and_adapter_default_are_distinct():
         assert "max_candidates_per_iter=3" in document
         assert "four atomic starts" in document
 
+    assert "rejected before launch" in api
+
 
 def test_supported_codex_cli_version_is_pinned_consistently():
     expected_install = 'npm install --prefix "$HOME/.local" @openai/codex@0.146.0'
