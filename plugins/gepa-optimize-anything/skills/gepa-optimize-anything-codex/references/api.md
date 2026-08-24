@@ -4,7 +4,7 @@ The public entry point is `gepa.optimize_anything.optimize_anything`.
 
 ## Signature
 ```python
-from gepa.optimize_anything import optimize_anything, OptimizeAnythingConfig
+from gepa.optimize_anything import GEPAResult, optimize_anything, OptimizeAnythingConfig
 
 result = optimize_anything(
     seed_candidate: str | None = None,   # starting text; None = seedless (engine bootstraps from objective/background)
@@ -17,7 +17,7 @@ result = optimize_anything(
     background: str | None = None,       # long-form rules/constraints/domain notes
     test_set: list | None = None,        # reporting-only: seed + final candidate scored here at the end
     config: OptimizeAnythingConfig | None = None,
-) -> Result
+) -> GEPAResult
 ```
 Examples in `dataset`/`valset`/`test_set` are opaque — any object your `evaluator` understands.
 `seed_candidate` is a **single string** at this API (multi-component `dict[str, str]` candidates
@@ -68,13 +68,16 @@ you want an unbiased number to report; skip it otherwise.
 exist here: tracking is configured via the gepa backend's `engine_config["tracking"]`
 (see `tracking.md`), and `effort` / `max_thinking_tokens` are per-agent-engine `engine_config` keys.
 
+
 ### Codex adapter exceptions
 
 For this repository's Linux-only Codex compatibility command, keep the default
 `sandbox=True` and stage the runtime before launch.
 Do not pass `max_token_cost` to `autoresearch` or `meta_harness`: the adapter
 rejects the resulting `--max-budget-usd` flag before Codex starts because it
-cannot enforce a USD cap. The adapter maps its supported Claude model names to
+cannot enforce a USD cap. Callers must explicitly set `max_evals=10` for Codex
+agentic runs and, for `meta_harness`, `max_iterations=3` plus
+`max_candidates_per_iter=3`. The adapter alone enforces a default of four atomic starts per state directory. The adapter maps its supported Claude model names to
 a pinned Codex target and reports token-derived USD as an estimate, not
 provider billing. It accepts GEPA's `--disallowedTools=...` form and rejects
 unknown flags plus `--settings` before Codex starts.
@@ -103,29 +106,31 @@ overlays the eval budget (`max_evals` → `engine.max_metric_calls`), `run_dir`,
 the `max_token_cost` → `engine.max_reflection_cost` cap.
 
 ```python
-engine_config = {
-    "reflection": {  # -> ReflectionConfig
-        "reflection_lm": "openai/gpt-5.1",  # configure through GEPA's upstream LM interface
-        "reflection_lm_kwargs": {
-            "reasoning_effort": "high"
-        },  # litellm kwargs (temperature, thinking, …)
+engine_config={
+    "reflection": {                     # -> ReflectionConfig
+        "reflection_lm": "anthropic/claude-sonnet-4-6",  # default "openai/gpt-5.1"; see "Proposer LM"
+        "reflection_lm_kwargs": {"reasoning_effort": "high"},  # litellm kwargs (temperature, thinking, …)
         "reflection_minibatch_size": 5,  # default: 1 single-task, 3 otherwise
+        # "custom_candidate_proposer": ClaudeCodeAgentProposer(...),  # replace the reflection LM with
+        #                                # a Claude Code proposer (from gepa.oa.proposers)
         # "reflection_strategy": ...,    # advanced: a ReflectionLM impl owning how reflection is called
     },
-    "engine": {  # -> EngineConfig (all optional, sensible defaults)
-        "max_workers": 32,  # parallel eval workers (default: cpu_count or 32)
-        "seed": 0,  # reproducibility
-        "frontier_type": "hybrid",  # "instance" | "objective" | "hybrid" (default) | "cartesian"
-        "candidate_selection_strategy": "pareto",  # | "current_best" | "epsilon_greedy" | "top_k_pareto"
+    "engine": {                          # -> EngineConfig (all optional, sensible defaults)
+        "max_workers": 32,               # parallel eval workers (default: cpu_count or 32)
+        "seed": 0,                       # reproducibility
+        "frontier_type": "hybrid",       # "instance" | "objective" | "hybrid" (default) | "cartesian"
+        "candidate_selection_strategy": "pareto",      # | "current_best" | "epsilon_greedy" | "top_k_pareto"
         "acceptance_criterion": "strict_improvement",  # | "improvement_or_equal"
-        "cache_evaluation": False,  # opt-in: cache identical (candidate, example) evals
-        "capture_stdio": False,  # opt-in: route evaluator print() output into feedback
-        "raise_on_exception": True,  # False → evaluator exceptions become score 0 + info["error"]
+        "cache_evaluation": False,       # opt-in: cache (candidate, split, example) evals.
+                                         # Distinct valset is isolated from trainset ids.
+                                         # valset=None still shares minibatch rollouts.
+        "capture_stdio": False,          # opt-in: route evaluator print() output into feedback
+        "raise_on_exception": True,      # False → evaluator exceptions become score 0 + info["error"]
         # "write_agent_state": True,     # agent-readable iterations/ + pareto/ tree under run_dir
     },
-    "tracking": {"use_wandb": True},  # -> TrackingConfig (see references/tracking.md)
-    "merge": {...},  # -> MergeConfig (cross-candidate merging) or omit
-    "refiner": {...},  # -> RefinerConfig (auto per-eval refinement) or omit
+    "tracking": {"use_wandb": True},     # -> TrackingConfig (see references/tracking.md)
+    "merge":  {...},                     # -> MergeConfig (cross-candidate merging) or omit
+    "refiner": {...},                    # -> RefinerConfig (auto per-eval refinement) or omit
     # "callbacks": [GEPACallback, ...],  # observation hooks (on_iteration_end, on_candidate_accepted, …)
     # "stop_callbacks": [...],           # custom StopperProtocol stop conditions
 }
@@ -146,11 +151,10 @@ e.g. **candidate-selection**, **acceptance-criterion**, **batch-sampling**, **ca
 | `max_thinking_tokens` | `None` | fixed thinking-token budget (`MAX_THINKING_TOKENS`). |
 
 The engine lays out a work dir (`program.md`, `candidate.txt`, `best_candidate.txt`, `eval.sh`) and
-launches `claude --print`; `eval.sh` POSTs candidates to the eval server, which enforces the
-evaluation budget server-side (HTTP 429 on exhaustion). In this Codex port, `max_token_cost` is
-rejected before launch; bound agentic work with `max_evals`, `max_iterations`,
-`max_candidates_per_iter`, `stop_at_score`, and the adapter invocation cap. Train and val are
-presented to the agent as one combined pool; the test set is unreachable over HTTP.
+launches `claude --print`; `eval.sh` POSTs candidates to the eval server, which enforces the budget
+server-side (HTTP 429 on exhaustion) and caps LLM spend via `--max-budget-usd` (from
+`max_token_cost`). Train and val are presented to the agent as one combined pool; the test set is
+unreachable over HTTP.
 
 ### `meta_harness` — `engine_config` → `MetaHarnessConfig`
 | key | default | meaning |
@@ -163,9 +167,6 @@ presented to the agent as one combined pool; the test set is unreachable over HT
 
 Each iteration the proposer subprocess reads the frontier + history state files, writes
 `pending_eval.json` with 1+ candidates, and the engine benchmarks each through the eval server.
-Callers must explicitly set Codex-backed `max_evals=10`, `max_iterations=3`, and
-`max_candidates_per_iter=3`. The adapter alone enforces a default of four atomic starts per state
-directory, including one retry only when Codex is known not to have started.
 
 ### `best_of_n` (baseline) — `engine_config` → `BestOfNConfig`
 Deliberately naive: each sample is one independent LLM call — no feedback, no history, no
@@ -215,26 +216,17 @@ redistributed.
   `max_token_cost` still applies). Extra knobs: `min_evals_per_stage`, `improvement_epsilon`,
   `cycle`, `max_switches`.
 
-For Codex agentic compositions, use `patience=2`. Individual `autoresearch` and `meta_harness`
-runs do not expose a common plateau setting, so their iteration, invocation, and evaluation caps
-remain the stop boundary.
-
 ```python
 from gepa.optimize_anything import optimize_sequential, OptimizeAnythingConfig
 
 result = optimize_sequential(
     SEED,
     evaluator=evaluate,
-    dataset=trainset,
-    valset=valset,
+    dataset=trainset, valset=valset,
     objective="...",
     configs=[
-        OptimizeAnythingConfig(
-            engine="autoresearch", max_evals=10, sandbox=True
-        ),
-        OptimizeAnythingConfig(
-            engine="gepa", max_evals=100
-        ),  # refines autoresearch's best
+        OptimizeAnythingConfig(engine="autoresearch", max_evals=10, sandbox=True),
+        OptimizeAnythingConfig(engine="gepa", max_evals=200),  # refines autoresearch's best
     ],
 )
 ```
@@ -245,21 +237,40 @@ take caller-owned `EvalServer`s — one per config (one shared server for
 eval through their own server. Related: the autoresearch backend's `handoffs` key materializes
 prior-stage artifacts into the agent's work dir for hand-rolled sequential compositions.
 
-## `Result`
+## `GEPAResult`
+
+`optimize_anything` always returns a `GEPAResult` (the same type as the legacy
+`gepa.gepa_launcher` path). The mutable engine-internal `Result` is still what
+engines and ensemble helpers thread; it is not the public return.
+
 ```python
-result.best_candidate  # str
-result.best_score  # float (on valset/selection set)
-result.total_evals  # int
-result.eval_log  # list[dict]
-result.metadata  # dict (verified keys):
-#   "gepa_result"            full GEPAResult (all candidates + per-instance val scores) — gepa engine only
+result.best_candidate   # str (or dict[str, str] for multi-component seeds)
+result.best_score       # float (on valset/selection set)
+result.total_evals      # int — eval-server call count (budget.used)
+result.eval_log         # list[dict]
+result.metadata         # dict (verified keys):
 #   "test_score"             avg over test_set         } only present
 #   "test_scores"            per-example dict          } if you passed
 #   "baseline_test_score"    seed avg over test_set    } a test_set
 #   "baseline_test_scores"   seed per-example dict     }
 #   "budget", "total_cost", "adapter_cost", "wall_time", "engine", "output_dir", "progress_log"
+result.candidates            # full candidate pool (length 1 on non-gepa engines)
+result.best_idx              # index of the highest val score
+result.val_aggregate_scores  # per-candidate average validation score
+result.to_dict()             # JSON-safe pool snapshot (does not include eval_log / metadata)
 ```
+
+The candidate pool lives on the result itself. `metadata` does **not** contain a nested
+`gepa_result`. `total_evals` is the eval-server count; `total_metric_calls` is GEPA core's
+own counter and may differ (e.g. after `BudgetExhausted`). `to_dict()` / `from_dict()` omit
+`eval_log`, `metadata`, and `eval_server_calls` so the frozen JSON pool contract stays
+byte-stable.
+
 The gepa engine also writes `run_dir/` artifacts, and the eval server writes
-`output_dir/summary.json`. The `gepa_result` in metadata is the richest artifact — keep it for
-post-hoc analysis. (If the best candidate equals the seed, the test scores are reported from the
+`output_dir/summary.json`. (If the best candidate equals the seed, the test scores are reported from the
 seed's single scoring pass rather than re-scored.)
+
+**Migration:** callers that used `isinstance(result, Result)` or
+`result.metadata["gepa_result"]` after `optimize_anything(...)` should switch to
+`GEPAResult` and `result.candidates`. Ensemble helpers (`optimize_sequential`, …)
+still return the mutable `Result`.

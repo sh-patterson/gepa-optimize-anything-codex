@@ -1,6 +1,6 @@
 [project]
 name = "gepa-optimize-anything-codex"
-version = "1.1.0"
+version = "1.2.0"
 description = "Codex adapter for GEPA Optimize Anything"
 requires-python = ">=3.11"
 license = "MIT"
@@ -12,7 +12,7 @@ dev = [
   "ruff>=0.11",
 ]
 live = [
-  "gepa[full] @ git+https://github.com/sh-patterson/gepa.git@3a6f93c5dd0beb68825973b3b2f2cae23060bbbb",
+  "gepa[full] @ git+https://github.com/sh-patterson/gepa.git@2943746ebf77dc2c6b8d986dd9a6b074952525ef",
 ]
 [tool.pytest.ini_options]
 markers = [
