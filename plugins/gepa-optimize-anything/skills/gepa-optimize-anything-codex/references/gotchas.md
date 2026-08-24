@@ -67,6 +67,9 @@ work:
   emitting cache-hitting candidates without consuming eval budget and can spin until your process
   times out, still spending proposer-LLM tokens. With caching on, `stop_at_score` and/or a compatible
   cost or wall-clock bound are mandatory.
+  A distinct `valset` is a separate cache namespace from the trainset (list-position ids would
+  otherwise collide). `valset=None` still shares cached rollouts with minibatches. Resuming a
+  `run_dir` whose cache predates that namespacing drops the old entries.
 This Codex adapter rejects agentic `max_token_cost` because it cannot enforce GEPA's
 `--max-budget-usd` contract. Callers must explicitly set `max_evals=10` for Codex agentic runs;
 for `meta_harness`, also set `max_iterations=3` and `max_candidates_per_iter=3`. The adapter alone
@@ -105,7 +108,7 @@ your evaluator stops the whole optimization. Either catch failures yourself and 
 
 ## 11. An outer AutoResearch turn is not an evaluation receipt
 
-The pinned GEPA commit now provides an evaluation-session drain barrier,
+The pinned GEPA commit provides an evaluation-session drain barrier,
 receipt-derived winner selection, and an ordering test that blocks proposal N+1
 until evaluation N feedback completes. Those tests repair the lifecycle defect;
 they do not make an outer `turn.completed` record sufficient release evidence.

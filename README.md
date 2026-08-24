@@ -31,14 +31,17 @@ preflight, and inspect the result.
 | `autoresearch` | Codex subprocess | Installed Codex adapter | Historical external receipt; fresh rerun required |
 | `meta_harness` | Codex subprocess | Installed Codex adapter | Historical external receipt; fresh rerun required |
 
-`gepa` and `best_of_n` have narrow probe receipts. The pinned GEPA commit's
-AutoResearch tests verify its evaluation-session drain barrier, receipt-derived
-winner, and feedback ordering. A historical phase-certification receipt also ran
-GEPA, AutoResearch, and MetaHarness against one shared evaluator, selected the
-best comparable score, and seeded a fresh AutoResearch continuation with the
-exact winner bytes. That external evidence is not a current certification of
-this checkout, and it never claimed semantic quality, generalization, or a
+`gepa` and `best_of_n` have narrow probe receipts. The pinned GEPA commit tracks
+[`gepa-ai/gepa`](https://github.com/gepa-ai/gepa) main and retains the fork-only
+AutoResearch evaluation-session drain barrier. Its tests verify receipt-derived
+winner selection and feedback ordering. A historical phase-certification receipt
+also ran GEPA, AutoResearch, and MetaHarness against one shared evaluator,
+selected the best comparable score, and seeded a fresh AutoResearch continuation
+with the exact winner bytes. That external evidence is not a current certification
+of this checkout, and it never claimed semantic quality, generalization, or a
 dollar-matched reproduction of the published Omni experiment.
+
+`optimize_anything` returns `GEPAResult`; use `result.candidates` for the full pool.
 
 The installed `scripts/codex_lm.py` callable supplies Codex to the two
 in-process engines. It does not add a new optimizer.
@@ -89,8 +92,9 @@ preflight opt-out. macOS agentic execution is not supported.
 
 ## Results
 
-The winning artifact and score are available on GEPA's result object as
-`best_candidate` and `best_score`. GEPA writes engine work to `run_dir` and
+The winning artifact and score are available on GEPA's `GEPAResult` as
+`best_candidate` and `best_score`. The full candidate pool is on
+`result.candidates`. GEPA writes engine work to `run_dir` and
 evaluation records plus summaries to `output_dir`.
 
 Agentic state contains metadata-only invocation records under

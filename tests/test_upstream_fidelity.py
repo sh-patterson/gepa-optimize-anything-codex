@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).parents[1]
-PINNED_GEPA_COMMIT = "3a6f93c5dd0beb68825973b3b2f2cae23060bbbb"
+PINNED_GEPA_COMMIT = "2943746ebf77dc2c6b8d986dd9a6b074952525ef"
 PINNED_GEPA_DEPENDENCY = (
     "gepa[full] @ git+https://github.com/sh-patterson/gepa.git@"
     f"{PINNED_GEPA_COMMIT}"
@@ -20,12 +20,12 @@ SKILL = (
 )
 
 PINNED_UPSTREAM_SHA256 = {
-    "SKILL.md": "d2addb90007d93da8bd93c556940a89b686ae0de51f9f4d3ce47041d23aaa599",
+    "SKILL.md": "f6a80101c37489cfdfddf64bac774722bed06aceb28fc3b5511eb663ec2b6fd3",
     "references/api.md": (
-        "556f6b7968edcb50afd80c23560a8bad0155ee9633b0f828cb954da267d98f5d"
+        "5b71c558f5f0af16fe0b30255894eba156d898e9d9cc1f9b94b01748a012fe06"
     ),
     "references/gotchas.md": (
-        "f299dab0819095fdaf430a4715fcdd7c1f5518579470d4c6be76dc78f758b4d2"
+        "11463edfd283fb4fe041ccf8466e914c99ecd6b27297a4b23a7b549f82ed94a1"
     ),
     "references/tracking.md": "f74dae340715fe9cd5a4a99c0f6a62c97dff6f65cfdd8e6a35e26dbb75c0da2c",
     "references/writing_evaluators.md": (
@@ -34,12 +34,12 @@ PINNED_UPSTREAM_SHA256 = {
 }
 
 REVIEWED_LOCAL_SHA256 = {
-    "SKILL.md": "aa08541af1d8e97f34052ce48a74e892105f4909f9f82ded103073577b991063",
+    "SKILL.md": "953e9b8b5c3a298e646a17b898a573f490dc24829f53b97e40e19df1b9c4cb0a",
     "references/api.md": (
-        "dbea32c545a2df516ff00c3baaa3541ec6b5830a76444cbb60d8b26810d3de8c"
+        "eccf2fd3b6a67c3eefb2d44a1f34351d97d1590ed1058fb94b22915336d8b5d7"
     ),
     "references/gotchas.md": (
-        "50f5d15347d9ed531c0f332c540a44279286b6aa433df34be624d200086c4daf"
+        "6940493f0dc4c696bd1f4050d14374cf952a41cc04b6c18dcb1f78e4ed405d3f"
     ),
     "references/tracking.md": PINNED_UPSTREAM_SHA256["references/tracking.md"],
     "references/writing_evaluators.md": PINNED_UPSTREAM_SHA256[
@@ -105,6 +105,7 @@ def test_upstream_autoresearch_repair_gate_is_explicit() -> None:
     assert "evaluation-session drain barrier" in upstream
     assert "completed evaluation receipts" in upstream
     assert "proposal N+1" in upstream
+    assert "b265bf9ca77fd8e8d82039d9f74911b8780fe1ce" in upstream
     assert PINNED_GEPA_COMMIT in upstream
 
 
