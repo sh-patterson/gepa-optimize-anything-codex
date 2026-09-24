@@ -75,7 +75,7 @@ def test_package_and_plugin_versions_match():
         (PLUGIN / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8")
     )
 
-    assert pyproject["project"]["version"] == "1.1.0"
+    assert pyproject["project"]["version"] == "1.2.0"
     assert manifest["version"] == pyproject["project"]["version"]
     assert pyproject["tool"]["setuptools"]["packages"] == []
 
@@ -91,6 +91,8 @@ def test_codex_agentic_caller_limits_and_adapter_default_are_distinct():
         assert "max_iterations=3" in document
         assert "max_candidates_per_iter=3" in document
         assert "four atomic starts" in document
+
+    assert "rejected before launch" in api
 
 
 def test_supported_codex_cli_version_is_pinned_consistently():

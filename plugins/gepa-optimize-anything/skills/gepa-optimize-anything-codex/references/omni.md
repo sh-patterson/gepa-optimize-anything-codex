@@ -66,7 +66,7 @@ Do not call a run Omni unless all three required engines reached valid terminal 
 shared evaluator, the Phase 1 winner was selected from comparable scores, and a fresh continuation
 received the exact winner bytes.
 
-Version 1.1.0 is released only after the public deterministic phase certifier passes against the
+Version 1.2.0 is released only after the public deterministic phase certifier passes against the
 exact installed tag candidate. GEPA, AutoResearch, and MetaHarness run equal `max_evals=10` slices
 against one evaluator; deterministic selection chooses the highest shared score; and a fresh
 AutoResearch process receives the exact winner bytes. Describe the resulting evidence as a

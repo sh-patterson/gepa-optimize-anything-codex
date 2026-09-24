@@ -66,9 +66,8 @@ installed callable for the in-process `gepa` and `best_of_n` engines. It pins
 `gpt-5.6-luna` with `high` reasoning and requires a fresh state and session
 directory for each engine. macOS agentic execution is unsupported.
 
-The `gepa` and `best_of_n` paths have narrow probe evidence. The pinned GEPA
-commit's tests verify AutoResearch's evaluation-session drain barrier,
-receipt-derived winner, and feedback ordering. The public deterministic phase
+The `gepa` and `best_of_n` paths have narrow probe evidence. The pinned GEPA commit's tests verify AutoResearch's evaluation-session drain barrier,
+receipt-derived winner, and feedback ordering on top of `gepa-ai/gepa` main. The public deterministic phase
 certification at commit `3a9ff30` ran installed GEPA, AutoResearch, and
 MetaHarness against one evaluator, selected the best shared score, and passed
 the exact winner bytes to a fresh AutoResearch continuation. This certifies the
@@ -123,7 +122,7 @@ even see it). See `references/api.md` for details and when to use each mode.
 
 ## Install
 ```bash
-pip install "gepa[full] @ git+https://github.com/sh-patterson/gepa.git@3a6f93c5dd0beb68825973b3b2f2cae23060bbbb"
+pip install "gepa[full] @ git+https://github.com/sh-patterson/gepa.git@2943746ebf77dc2c6b8d986dd9a6b074952525ef"
 # [full] pulls cloudpickle — needed to pickle closure evaluators for
                            # parallel workers / opt-in evaluation caching; plain `pip install gepa`
                            # can fail there when your evaluator closes over data.
@@ -201,7 +200,7 @@ The constant is the same everywhere for the in-process `gepa` and `best_of_n` ba
   themselves how to spend eval calls, so treat it as a floor.)
 
 After the run, check how many proposals actually happened (on the gepa backend,
-`result.metadata["gepa_result"]` holds every candidate; with `engine.write_agent_state=True` the
+`result.candidates` is the full pool; with `engine.write_agent_state=True` the
 `run_dir/iterations/` tree shows each one). **If it stopped after one proposal, the budget was too
 low** — raise it and rerun.
 
@@ -218,7 +217,8 @@ low** — raise it and rerun.
 - If you **opt in** to evaluation caching (`engine_config={"engine": {"cache_evaluation": True}}` on
   the gepa backend — it is **off by default**), be aware `max_evals` then counts only cache *misses*:
   a converged search can keep proposing cache-hitting candidates without consuming eval budget, so
-  `stop_at_score` and a compatible cost or wall-clock bound become mandatory, not optional.
+  `stop_at_score` and a compatible cost or wall-clock bound become mandatory, not optional. A distinct
+  `valset` is cached separately from the trainset; `valset=None` still reuses minibatch rollouts.
 
 ## Minimal working example
 The example optimizes a system prompt for concreteness, but the **shape is identical** for any
@@ -318,7 +318,7 @@ These silently degrade *results* — skim before launching:
 
 ## Reference files (load as needed)
 - `references/api.md` — `OptimizeAnythingConfig`, the backends and their typed `engine_config`
-  options, the three modes, the LM protocol, budget/cost semantics, `Result` shape, and the
+  options, the three modes, the LM protocol, budget/cost semantics, `GEPAResult` shape, and the
   composition/pipeline helpers.
 - `references/writing_evaluators.md` — the `(score, info)` contract, `oa.log()`/`capture_stdio`,
   LLM-as-judge scoring, multi-objective via `info["scores"]`, N>1 averaging, feedback design.
