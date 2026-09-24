@@ -3,11 +3,12 @@
 These commands certify an installed marketplace artifact. They are not the
 normal user workflow.
 
-Version 1.2.0 tracks current `gepa-ai/gepa` main and packages the fork-only
-AutoResearch drain repair plus the paper-informed multi-engine composition. The
-repository records a historical audit pointer for its phase certification, but
-does not custody that live receipt under `release/receipts/`; that pointer is
-not current release proof. For a new release, run the certifier against the
+The v1.2.0 candidate pins GEPA to the upstream baseline recorded in
+`UPSTREAM.md` and packages the fork-only AutoResearch drain repair plus the
+paper-informed multi-engine composition. The repository records a historical
+audit pointer for its phase certification, but does not custody that live receipt
+under `release/receipts/`. That pointer is not current release proof. For a new
+release, run the certifier against the
 exact installed tag candidate and preserve its sanitized receipt in the
 repository before making the claim.
 The no-call checks below use fake processes only.

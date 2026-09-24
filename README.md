@@ -31,10 +31,11 @@ preflight, and inspect the result.
 | `autoresearch` | Codex subprocess | Installed Codex adapter | Historical external receipt; fresh rerun required |
 | `meta_harness` | Codex subprocess | Installed Codex adapter | Historical external receipt; fresh rerun required |
 
-`gepa` and `best_of_n` have narrow probe receipts. The pinned GEPA commit tracks
-[`gepa-ai/gepa`](https://github.com/gepa-ai/gepa) main and retains the fork-only
-AutoResearch evaluation-session drain barrier. Its tests verify receipt-derived
-winner selection and feedback ordering. A historical phase-certification receipt
+`gepa` and `best_of_n` have narrow probe receipts. The pinned GEPA commit is
+based on the upstream revision recorded in [`UPSTREAM.md`](UPSTREAM.md) and
+retains the fork-only AutoResearch evaluation-session drain barrier. Its tests
+verify receipt-derived winner selection and feedback ordering. A historical
+phase-certification receipt
 also ran GEPA, AutoResearch, and MetaHarness against one shared evaluator,
 selected the best comparable score, and seeded a fresh AutoResearch continuation
 with the exact winner bytes. That external evidence is not a current certification

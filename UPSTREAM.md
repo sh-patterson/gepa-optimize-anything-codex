@@ -25,9 +25,12 @@ release.
 
 ## Fork-only AutoResearch repair
 
-Pinned commit `2943746ebf77dc2c6b8d986dd9a6b074952525ef` tracks `gepa-ai/gepa`
-main and reapplies the fork-only evaluation-session drain barrier locally. It
-rejects late requests after close, derives the winner from completed evaluation receipts, and prevents proposal N+1 from starting before evaluation N feedback
+Pinned commit `2943746ebf77dc2c6b8d986dd9a6b074952525ef` is based on
+`gepa-ai/gepa` commit `b265bf9ca77fd8e8d82039d9f74911b8780fe1ce` and
+reapplies the fork-only evaluation-session drain barrier locally. It
+rejects late requests after close, derives the winner from
+completed evaluation receipts, and prevents proposal N+1 from starting before
+evaluation N feedback
 completes. This repair is maintained on `sh-patterson/gepa` only; it is not
 submitted upstream.
 
