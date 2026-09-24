@@ -3,7 +3,7 @@
 
     python preflight.py                         # checks gepa + reflection-LM creds
     python preflight.py --engine autoresearch  # checks Codex + Bubblewrap + jq
-    GEPA_REFLECTION_LM=anthropic/claude-sonnet-4-6 python preflight.py --test-lm
+    python preflight.py --engine gepa --test-lm  # one Codex model call
 
 Exit code 0 = all good; non-zero = at least one blocker.
 """
@@ -35,9 +35,9 @@ from codex_claude_adapter import _max_adapter_invocations  # noqa: E402
 OK, BAD = "\033[32mOK\033[0m", "\033[31mFAIL\033[0m"
 problems: list[str] = []
 
-# The gepa backend's reflection LM defaults to openai/gpt-5.1; best_of_n's
-# sampling model defaults to claude-sonnet-4-6 (see references/api.md).
-DEFAULT_LM_BY_ENGINE = {"gepa": "openai/gpt-5.1", "best_of_n": "claude-sonnet-4-6"}
+# The Codex skill's GEPA entry point installs CodexLM. The separate best_of_n
+# baseline still uses GEPA's provider model unless explicitly adapted.
+DEFAULT_LM_BY_ENGINE = {"best_of_n": "claude-sonnet-4-6"}
 EXPECTED_LAUNCHER = Path(__file__).with_name("claude").resolve()
 STAGED_LAUNCHER_RELATIVE = Path(
     ".local/share/gepa-optimize-anything-codex/bin/claude"
@@ -209,9 +209,43 @@ def main() -> int:
         print(f"      {e}")
         return _report()
 
-    # 2) LM credentials (in-process engines that call an LLM directly)
+    # 2) The skill's GEPA path must use Codex reflection, not provider defaults.
     lm = os.environ.get("GEPA_REFLECTION_LM", "")
-    if a.engine in ("gepa", "best_of_n"):
+    if a.engine == "gepa":
+        check(
+            "Linux host for the Codex reflection runtime",
+            sys.platform.startswith("linux"),
+            "run the Codex skill from Linux",
+        )
+        try:
+            paths = stage_runtime(runtime_paths())
+            check("Codex reflection launcher is staged", paths.launcher.is_file())
+            check("Codex GEPA entry point is installed", (SCRIPT_DIR / "codex_gepa.py").is_file())
+            login_env = dict(os.environ)
+            login_env.update(
+                {
+                    "HOME": str(paths.home),
+                    "CODEX_HOME": str(paths.codex_home),
+                    "CODEX_CLI": str(paths.codex),
+                }
+            )
+            for name in ("CODEX_API_KEY", "OPENAI_API_KEY"):
+                login_env.pop(name, None)
+            auth_ok, _ = _codex_login_available(str(paths.codex), login_env)
+            check(
+                "Isolated Codex reflection login",
+                auth_ok,
+                "run `sandbox_runtime.py login`",
+            )
+            surface_ok, surface_problem = _codex_exec_surface(str(paths.codex))
+            check(
+                "Codex CLI exposes the required `exec` flags",
+                surface_ok,
+                surface_problem or "install the supported Codex CLI",
+            )
+        except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+            check("Codex reflection runtime", False, str(exc))
+    if a.engine == "best_of_n":
         effective_lm = lm or DEFAULT_LM_BY_ENGINE[a.engine]
         if not lm:
             print(f"      GEPA_REFLECTION_LM unset -> engine default '{effective_lm}'")
@@ -348,7 +382,16 @@ def main() -> int:
             )
 
     # 4) optional live LM round-trip
-    if a.test_lm and a.engine in ("gepa", "best_of_n"):
+    if a.test_lm and a.engine == "gepa":
+        try:
+            from codex_gepa import _new_codex_lm
+
+            codex_lm, _ = _new_codex_lm(1, 60)
+            out = codex_lm("Reply with exactly the lowercase word: ok")
+            check("Codex reflection 1-call round-trip", out.strip() == "ok")
+        except Exception as exc:  # noqa: BLE001
+            check("Codex reflection 1-call round-trip", False, str(exc)[:160])
+    if a.test_lm and a.engine == "best_of_n":
         target = lm or DEFAULT_LM_BY_ENGINE[a.engine]
         try:
             from gepa.lm import LM

@@ -9,9 +9,20 @@ description: >-
 ---
 # `optimize_anything`
 
-This is a Codex port of GEPA's upstream skill. The installed runtime adapts
-GEPA's agentic process boundary to Codex. See `references/runtime.md` for that
-internal contract.
+This is a Codex port of GEPA's upstream skill. For this skill's default
+`engine="gepa"` path, use `scripts/codex_gepa.py::optimize_with_codex`: it
+installs `CodexLM` as GEPA's reflective model and rejects a provider-model
+fallback. The installed runtime also adapts GEPA's agentic process boundary to
+Codex. See `references/runtime.md` for the process contract.
+
+For a default GEPA run, resolve `SKILL_DIR` to this installed skill, install the
+pinned GEPA dependency, install Codex CLI 0.146.0 beneath `$HOME/.local`, and
+authenticate the isolated runtime with `sandbox_runtime.py login`. Export
+`GEPA_CODEX_SKILL_DIR="$SKILL_DIR"`; run `preflight.py --engine gepa`, then use
+`optimize_with_codex` in the program. The wrapper stages the runtime and gives
+each run fresh adapter and session state. It requires a positive `max_evals`,
+caps Codex reflection starts with `max_reflection_calls` (default 4), and sets
+zero retries. It uses the isolated ChatGPT login, not a provider API key.
 
 For every `autoresearch` or `meta_harness` run:
 
@@ -28,7 +39,7 @@ For every `autoresearch` or `meta_harness` run:
 
 The agentic adapter supports Linux only. Keep GEPA's default `sandbox=True`. Staging puts the adapter under Bubblewrap's read-only `~/.local` bind. Keep `CODEX_HOME` and adapter state under its writable `~/.cache` bind. Authenticate that isolated home with `sandbox_runtime.py login`, or use `CODEX_API_KEY`. The jail does not expose the normal `~/.codex` login directory. An explicit `--no-sandbox` preflight is the opt-out path for hosts that intentionally use the normal Codex login.
 
-The adapter maps the pinned GEPA default `claude-sonnet-4-6` to `gpt-5.6-luna`. It rejects other source models before starting Codex. Sandboxed runs require either the staged ChatGPT login or `CODEX_API_KEY`; the adapter preserves the existing `CODEX_HOME` and never copies authentication into its session-state directory. Unsandboxed runs may use an existing normal `codex login`. `OPENAI_API_KEY` remains available to GEPA's in-process models but is never translated into Codex authentication.
+The adapter maps the pinned GEPA default `claude-sonnet-4-6` to `gpt-5.6-luna`. It rejects other source models before starting Codex. Sandboxed runs require either the staged ChatGPT login or `CODEX_API_KEY`; the adapter preserves the existing `CODEX_HOME` and never copies authentication into its session-state directory. Unsandboxed runs may use an existing normal `codex login`. The default GEPA reflection wrapper uses the staged ChatGPT login; direct upstream GEPA calls can still use a provider model when explicitly chosen.
 
 Do not set `max_token_cost` with `autoresearch` or `meta_harness`. GEPA passes it as `--max-budget-usd`; the adapter rejects that flag before spawning Codex because it cannot enforce a USD cap. Callers must explicitly set `max_evals=10` and, for `meta_harness`, `max_iterations=3` plus `max_candidates_per_iter=3`. The adapter alone enforces a default of four atomic starts per unique state directory. It retries once only when Codex is known not to have started, and that retry consumes an invocation slot. It never retries an ambiguous, usage-bearing, or completed call. Set `CODEX_ADAPTER_MAX_INVOCATIONS` to a different positive integer to override the atomic start cap; a claimed slot remains consumed after failure. Set `stop_at_score` whenever the metric has a known ceiling. A host timeout is an optional emergency stop, not a default budget. `total_cost_usd` is a conservative standard-tier estimate from observed tokens, not provider billing. The adapter accepts pinned GEPA's exact web-tool denial, disables Codex's standalone web search, and rejects unknown policy values plus `--settings` before Codex starts. Shell network access remains available, matching GEPA's unsandboxed agent path.
 
@@ -47,8 +58,8 @@ no metric internals — only the scalar score and the feedback text you emit. Th
 The framework just imposes no structure on it — any string an evaluator can score works. The
 leverage is in your score and your feedback.
 
-**You write the task and evaluator once, then choose the search algorithm with one `engine`
-argument** — and the same code runs under any of them:
+**You write the task and evaluator once.** The Codex GEPA entry point fixes the
+reflective backend to Codex; use GEPA's direct API for another engine:
 - **`gepa`** — the GEPA optimizer: reflective evolutionary search, in-process (an LLM reflects on
   feedback and mutates candidates; keeps a Pareto frontier). The default; strongest when feedback
   is rich.
@@ -61,8 +72,9 @@ argument** — and the same code runs under any of them:
 deliberately naive: use it as a **baseline** to compare an optimizer against, not as the optimizer.)
 
 This plugin translates the Linux-only `autoresearch` and `meta_harness`
-subprocess boundary to Codex. `scripts/codex_lm.py` exports `CodexLM`, the
-installed callable for the in-process `gepa` and `best_of_n` engines. It pins
+subprocess boundary to Codex. `scripts/codex_lm.py` exports `CodexLM`; the
+default GEPA wrapper installs it as the reflection model. The separate
+`best_of_n` baseline does not use that wrapper. `CodexLM` pins
 `gpt-5.6-luna` with `high` reasoning and requires a fresh state and session
 directory for each engine. macOS agentic execution is unsupported.
 
@@ -126,10 +138,10 @@ pip install "gepa[full] @ git+https://github.com/sh-patterson/gepa.git@2943746eb
 # [full] pulls cloudpickle — needed to pickle closure evaluators for
                            # parallel workers / opt-in evaluation caching; plain `pip install gepa`
                            # can fail there when your evaluator closes over data.
-# Proposer LLM: in-process engines use GEPA's upstream LM interface. Configure
-# the provider model and credentials required by that interface.
+# The skill's default GEPA entry point uses Codex as its reflection model.
 # Agentic backends additionally need the Codex CLI, `jq`, and the staged runtime.
 # Resolve SKILL_DIR to the directory containing this installed SKILL.md:
+export GEPA_CODEX_SKILL_DIR="$SKILL_DIR"
 RUNTIME_BIN="$(python "$SKILL_DIR/scripts/sandbox_runtime.py" stage)"
 export PATH="$RUNTIME_BIN:$PATH"
 export CODEX_HOME="$HOME/.cache/gepa-optimize-anything-codex/codex"
@@ -146,11 +158,11 @@ export CODEX_ADAPTER_STATE_DIR="$(mktemp -d "$HOME/.cache/gepa-optimize-anything
    `references/api.md`.
 3. **Engine (backend)** — `"gepa"` (default), `"autoresearch"`, `"meta_harness"`, the `"best_of_n"`
    baseline, or a constructed `Engine` instance.
-4. **Budget** — `max_evals` (server-side eval-call cap, **default 100**) and, for in-process
-   backends, `max_token_cost` (USD cap on proposer-LLM spend). This Codex adapter rejects
-   `max_token_cost` for `autoresearch` and `meta_harness`; those agentic paths use the explicit
-   bounded values below. For in-process runs, **size `max_evals` for many proposal rounds, not
-   one** (see below) — this is the most common way agents misuse this API.
+4. **Budget** — `max_evals` caps evaluations. The Codex GEPA entry point also
+   caps reflection starts with `max_reflection_calls` and rejects
+   `max_token_cost`: the adapter cannot enforce an exact USD ceiling. Agentic
+   paths use their explicit bounded values below. Size `max_evals` for many
+   proposal rounds, not one (see below).
 
 ### Codex agentic caller configuration
 
@@ -209,22 +221,30 @@ low** — raise it and rerun.
 - **`stop_at_score`** — set it whenever your metric has a known ceiling (e.g. `1.0` for a pass rate /
   accuracy). The backend stops the moment a candidate reaches it instead of burning the rest of the
   budget at the optimum.
-- **`max_token_cost`** — a hard USD cap for supported in-process backends. Do not set it for this
-  adapter's `autoresearch` or `meta_harness` path: the adapter fails closed because
-  Codex cannot enforce GEPA's `--max-budget-usd` contract.
+- **`max_reflection_calls`** — the Codex GEPA wrapper's atomic start cap (default 4).
+  Set it alongside `max_evals`; a failed or ambiguous start consumes a slot.
+  The wrapper rejects `max_token_cost` because Codex reports a token-based
+  estimate, not an enforceable USD ceiling. Agentic Codex paths reject it too.
 - **an optional wall-clock `timeout`** only when you need an emergency operational stop; do not use
   elapsed time as the default Codex work budget.
 - If you **opt in** to evaluation caching (`engine_config={"engine": {"cache_evaluation": True}}` on
   the gepa backend — it is **off by default**), be aware `max_evals` then counts only cache *misses*:
   a converged search can keep proposing cache-hitting candidates without consuming eval budget, so
-  `stop_at_score` and a compatible cost or wall-clock bound become mandatory, not optional. A distinct
+  `stop_at_score` and the Codex reflection-start cap become essential. A distinct
   `valset` is cached separately from the trainset; `valset=None` still reuses minibatch rollouts.
 
 ## Minimal working example
 The example optimizes a system prompt for concreteness, but the **shape is identical** for any
 candidate — swap `SEED` for a code file / config / etc. and have `evaluate` compile/run/measure it.
 ```python
-from gepa.optimize_anything import optimize_anything, OptimizeAnythingConfig
+import os
+import sys
+from pathlib import Path
+
+from gepa.optimize_anything import OptimizeAnythingConfig
+
+sys.path.insert(0, str(Path(os.environ["GEPA_CODEX_SKILL_DIR"]) / "scripts"))
+from codex_gepa import optimize_with_codex
 
 SEED = "You are an expert. Solve the task. Output only the final answer."
 
@@ -243,7 +263,7 @@ def evaluate(candidate: str, example) -> tuple[float, dict]:
     }
 
 
-result = optimize_anything(
+run = optimize_with_codex(
     seed_candidate=SEED,
     evaluator=evaluate,
     dataset=trainset,  # optimize on these (multi-task/generalization mode)
@@ -251,9 +271,9 @@ result = optimize_anything(
     test_set=testset,  # OPTIONAL, reporting-only: seed + final candidate scored here at the end
     objective="Produce a prompt that maximizes task accuracy.",
     background="Domain rules, constraints, output format the model must follow.",
+    max_reflection_calls=20,  # Codex starts; each call has zero retries
     config=OptimizeAnythingConfig(
-        engine="gepa",  # swap to "autoresearch" / "meta_harness" — same code
-        #   ("best_of_n" runs the same way, as a comparison baseline)
+        engine="gepa",  # this wrapper fixes the reflective engine to Codex
         name="my_run",
         max_evals=300,  # ≳ 15-20 × len(valset): enough for ~15-20 proposals (see above)
         stop_at_score=1.0,  # stop at the optimum (set when your metric has a known ceiling)
@@ -261,15 +281,14 @@ result = optimize_anything(
         run_dir="runs/my_run",  # engine workspace (gepa run dir / agent work dir)
         output_dir="outputs/my_run",  # eval server: per-eval JSON, progress_log.jsonl, summary.json
         engine_config={  # gepa backend: a GEPAConfig-shaped dict, validated strictly —
-            "reflection": {  #   an unknown key raises TypeError immediately (fail fast)
-                "reflection_lm": "openai/gpt-5.1",
-                "reflection_lm_kwargs": {},
+            "reflection": {  # the wrapper supplies CodexLM as reflection_lm
                 "reflection_minibatch_size": 5,
             },
             "engine": {"max_workers": 32, "seed": 0},  # seed = reproducibility
         },
     ),
 )
+result = run.result
 print(result.best_candidate, result.best_score)
 # held-out (only present if you passed test_set): "test_score" = average, "test_scores" = per-example
 print(
@@ -287,8 +306,9 @@ print(
 3. **Write a feedback-rich `evaluate`.** The `info` dict is the proposer's signal — return errors,
    diffs, partial credit, not just a number (`oa.log()` and `capture_stdio` can route diagnostics in
    automatically). See `references/writing_evaluators.md`.
-4. **Pick a proposer LLM** — a LiteLLM id (set the provider key) or a custom LM-protocol callable.
-   Validate it with a 1-call test before a long run.
+4. **Use Codex reflection by default** through `optimize_with_codex`. Start with
+   a small `max_reflection_calls` and validate one full proposal/evaluation
+   cycle before a long run. Provider LMs require an explicit direct GEPA call.
 5. **Set a budget** (`max_evals` sized per above; add `max_token_cost` only for a backend that can
    enforce it) plus `stop_at_score` when the metric has a ceiling.
 6. **Run `python "$SKILL_DIR/scripts/preflight.py" --engine <engine>`** to fail fast on missing creds / CLI before a long run.

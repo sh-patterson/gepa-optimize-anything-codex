@@ -41,8 +41,12 @@ only.
 
 ## Engine evidence boundary
 
-`gepa` and `best_of_n` have narrow probe evidence through the installed
-`CodexLM` callable. The exact pinned GEPA checkout's tests verify
+The skill's default `gepa` path uses `optimize_with_codex`, which injects
+`CodexLM` into GEPA's `reflection_lm` and rejects a provider fallback. It
+requires an isolated ChatGPT login, a positive evaluation cap, a bounded count
+of Codex reflection starts, and zero retries. Direct upstream GEPA calls keep
+upstream model defaults; the separate `best_of_n` baseline does not use this
+wrapper. The exact pinned GEPA checkout's tests verify
 AutoResearch's evaluation-session drain barrier, receipt-derived winner, and
 feedback ordering. A completed adapter JSONL alone still proves only the outer
 Codex process. Installed AutoResearch and MetaHarness require branch receipts,
