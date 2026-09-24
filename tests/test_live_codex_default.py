@@ -16,10 +16,16 @@ ROOT = Path(__file__).parents[1]
 @pytest.mark.skipif(
     os.environ.get("RUN_CODEX_LIVE") != "1", reason="requires one live Codex call"
 )
-def test_installed_default_reflection_improves_from_evaluator_feedback() -> None:
+def test_installed_default_reflection_improves_from_evaluator_feedback(tmp_path: Path) -> None:
     skill = Path(os.environ["GEPA_CODEX_SKILL_DIR"]).resolve()
     assert ROOT.resolve() not in skill.parents
     scripts = skill / "scripts"
+    source_scripts = (
+        ROOT / "plugins" / "gepa-optimize-anything" / "skills"
+        / "gepa-optimize-anything-codex" / "scripts"
+    )
+    for name in ("codex_gepa.py", "codex_lm.py", "sandbox_runtime.py"):
+        assert (scripts / name).read_bytes() == (source_scripts / name).read_bytes()
     sys.path.insert(0, str(scripts))
     spec = importlib.util.spec_from_file_location("codex_gepa_live", scripts / "codex_gepa.py")
     assert spec is not None and spec.loader is not None
@@ -41,6 +47,8 @@ def test_installed_default_reflection_improves_from_evaluator_feedback() -> None
             max_evals=4,
             stop_at_score=1.0,
             engine_config={"engine": {"max_candidate_proposals": 1}},
+            run_dir=str(tmp_path / "run"),
+            output_dir=str(tmp_path / "output"),
         ),
         max_reflection_calls=1,
     )
