@@ -3,7 +3,7 @@
 These commands certify an installed marketplace artifact. They are not the
 normal user workflow.
 
-The v1.2.0 candidate pins GEPA to the upstream baseline recorded in
+The v1.3.0 candidate pins GEPA to the upstream baseline recorded in
 `UPSTREAM.md` and packages the fork-only AutoResearch drain repair plus the
 paper-informed multi-engine composition. The repository records a historical
 audit pointer for its phase certification, but does not custody that live receipt

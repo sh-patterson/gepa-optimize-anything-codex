@@ -22,6 +22,7 @@ def test_skill_has_required_files_and_local_links():
     assert (SKILL / "scripts" / "claude").is_file()
     assert (SKILL / "scripts" / "codex_claude_adapter.py").is_file()
     assert (SKILL / "scripts" / "codex_lm.py").is_file()
+    assert (SKILL / "scripts" / "codex_gepa.py").is_file()
     assert (SKILL / "scripts" / "preflight.py").is_file()
     for name in (
         "api.md",
@@ -69,13 +70,22 @@ def test_marketplace_points_to_the_skills_only_plugin():
     assert not (ROOT / ".agents" / "skills").exists()
 
 
+def test_skill_defaults_to_the_codex_gepa_entry_point():
+    skill = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+    assert "run = optimize_with_codex(" in skill
+    assert '"reflection_lm": "openai/gpt-5.1"' not in skill
+    assert "rejects provider-model fallbacks" in readme
+
+
 def test_package_and_plugin_versions_match():
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     manifest = json.loads(
         (PLUGIN / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8")
     )
 
-    assert pyproject["project"]["version"] == "1.2.0"
+    assert pyproject["project"]["version"] == "1.3.0"
     assert manifest["version"] == pyproject["project"]["version"]
     assert pyproject["tool"]["setuptools"]["packages"] == []
 

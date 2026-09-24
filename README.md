@@ -2,7 +2,8 @@
 
 This marketplace packages GEPA's `optimize_anything` skill for Codex. GEPA
 keeps ownership of candidates, evaluators, engines, and result objects. The
-plugin adds the Linux runtime needed for its two agentic engines to use Codex.
+plugin makes Codex the default reflective model for this skill's `gepa` path
+and adds the Linux runtime needed for its two agentic engines to use Codex.
 
 ## Install
 
@@ -26,12 +27,16 @@ preflight, and inspect the result.
 
 | Engine | Execution | Model interface | Evidence |
 |---|---|---|---|
-| `gepa` | In process | Installed `CodexLM` | Narrow probe verified |
-| `best_of_n` | In process | Installed `CodexLM` | Narrow probe verified |
+| `gepa` | In process | Installed `CodexLM` through `optimize_with_codex` | Installed-artifact live reflection passed on 2026-09-24 |
+| `best_of_n` | In process | GEPA provider model unless explicitly adapted | Narrow Codex probe verified |
 | `autoresearch` | Codex subprocess | Installed Codex adapter | Historical external receipt; fresh rerun required |
 | `meta_harness` | Codex subprocess | Installed Codex adapter | Historical external receipt; fresh rerun required |
 
-`gepa` and `best_of_n` have narrow probe receipts. The pinned GEPA commit is
+The installed `gepa` entry point passed a bounded live test on 2026-09-24:
+one Codex reflection call used evaluator feedback to improve a candidate from
+score 0 to 1. The terminal completed with 12,313 input tokens and 37 output
+tokens. The adapter's $0.01561325 cost figure is an estimate, not billed cost.
+`best_of_n` has a separate narrow probe. The pinned GEPA commit is
 based on the upstream revision recorded in [`UPSTREAM.md`](UPSTREAM.md) and
 retains the fork-only AutoResearch evaluation-session drain barrier. Its tests
 verify receipt-derived winner selection and feedback ordering. A historical
@@ -42,10 +47,14 @@ with the exact winner bytes. That external evidence is not a current certificati
 of this checkout, and it never claimed semantic quality, generalization, or a
 dollar-matched reproduction of the published Omni experiment.
 
-`optimize_anything` returns `GEPAResult`; use `result.candidates` for the full pool.
+`optimize_with_codex` returns a run containing GEPA's result and the Codex
+reflection evidence. Use `run.result.candidates` for the full candidate pool.
 
-The installed `scripts/codex_lm.py` callable supplies Codex to the two
-in-process engines. It does not add a new optimizer.
+The installed `scripts/codex_gepa.py` entry point makes Codex the GEPA
+reflection model for this skill. It injects the installed `CodexLM` callable,
+rejects provider-model fallbacks, and bounds reflection starts. It does not add
+a new optimizer. Direct calls to GEPA's upstream API retain GEPA's own model
+defaults.
 
 Public deterministic phase certification passed historically for the full three-engine
 composition, but its row is only a historical audit pointer, not a receipt stored
@@ -56,8 +65,7 @@ and its hash is recorded in the audit log.
 ## Requirements
 
 Install the pinned GEPA dependency with the repository's `live` extra. The
-in-process engines also need the credentials required by their configured
-provider model.
+default GEPA reflection path uses the isolated Codex ChatGPT login.
 
 Agentic runs need Linux, Bubblewrap, `jq`, and Codex CLI 0.146.0 installed at a
 Bubblewrap-visible path:
